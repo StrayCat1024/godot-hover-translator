@@ -13,6 +13,7 @@ var accent: ColorRect
 var _font: SystemFont
 var _last_mouse := Vector2(-10000, -10000)
 var _current_word := ""
+var _avoid_rects: Array[Rect2] = []
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -211,6 +212,9 @@ func show_result(result: Dictionary, mouse_pos: Vector2) -> void:
 	visible = true
 	_layout(mouse_pos)
 
+func set_avoid_rects(rects: Array[Rect2]) -> void:
+	_avoid_rects = rects.duplicate()
+
 func _layout(mouse_pos: Vector2) -> void:
 	var vp := get_viewport_rect().size
 	var max_width := 460.0
@@ -225,17 +229,57 @@ func _layout(mouse_pos: Vector2) -> void:
 	var h: float = maxf(panel.size.y, 76.0)
 	panel.size = Vector2(w, h)
 
-	var pos := mouse_pos + Vector2(20, 22)
-	if pos.x + w > vp.x - 10.0:
-		pos.x = mouse_pos.x - w - 16.0
-	if pos.y + h > vp.y - 10.0:
-		pos.y = mouse_pos.y - h - 16.0
-	pos.x = clampf(pos.x, 8.0, maxf(8.0, vp.x - w - 8.0))
-	pos.y = clampf(pos.y, 8.0, maxf(8.0, vp.y - h - 8.0))
-	panel.position = pos
-	accent.position = pos + Vector2(0, 7)
+	var gap := 16.0
+	var candidates: Array[Vector2] = []
+	if not _avoid_rects.is_empty():
+		# The native help popup is a separate window and will always draw
+		# above this Control. Put the card on the opposite side of it.
+		var tip := _avoid_rects[0]
+		var lane_y := clampf(mouse_pos.y - h * 0.5, 12.0, maxf(12.0, vp.y - h - 12.0))
+		if tip.get_center().x < vp.x * 0.5:
+			panel.position = Vector2(vp.x - w - 12.0, lane_y)
+		else:
+			panel.position = Vector2(12.0, lane_y)
+		panel.position.x = clampf(panel.position.x, 8.0, maxf(8.0, vp.x - w - 8.0))
+		accent.position = panel.position + Vector2(0, 7)
+		accent.size = Vector2(3, h - 14)
+		accent.visible = true
+		return
+	candidates.append_array([
+		Vector2(mouse_pos.x + 20.0, mouse_pos.y + 22.0),
+		Vector2(mouse_pos.x - w - gap, mouse_pos.y + 22.0),
+		Vector2(mouse_pos.x + 20.0, mouse_pos.y - h - gap),
+		Vector2(mouse_pos.x - w - gap, mouse_pos.y - h - gap),
+		Vector2(12.0, vp.y - h - 12.0),
+		Vector2(vp.x - w - 12.0, vp.y - h - 12.0),
+		Vector2(vp.x - w - 12.0, 12.0),
+		Vector2(12.0, 12.0),
+	])
+	var best := Vector2(12, 12)
+	var best_score := INF
+	for candidate in candidates:
+		var pos := Vector2(
+			clampf(candidate.x, 8.0, maxf(8.0, vp.x - w - 8.0)),
+			clampf(candidate.y, 8.0, maxf(8.0, vp.y - h - 8.0))
+		)
+		var score := _overlap_area(Rect2(pos, Vector2(w, h)))
+		if score < best_score:
+			best_score = score
+			best = pos
+			if score <= 0.0:
+				break
+	panel.position = best
+	accent.position = best + Vector2(0, 7)
 	accent.size = Vector2(3, h - 14)
 	accent.visible = true
+
+func _overlap_area(r: Rect2) -> float:
+	var total := 0.0
+	for avoid in _avoid_rects:
+		var hit := r.intersection(avoid)
+		if hit.size.x > 0.0 and hit.size.y > 0.0:
+			total += hit.size.x * hit.size.y
+	return total
 
 func _display_query(q: String) -> String:
 	var s := q.replace("\n", " ").strip_edges()

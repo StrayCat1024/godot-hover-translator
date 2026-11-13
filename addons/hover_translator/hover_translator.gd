@@ -27,6 +27,7 @@ var _last_kind := "ui"
 var _last_context := ""
 var _last_where := ""
 var _last_result: Dictionary = {}
+var _last_valid_mouse := Vector2.ZERO
 var _tooltip_guard := 0.0
 var _dock: VBoxContainer
 var _status: Label
@@ -47,15 +48,10 @@ var _online_token := ""
 var _online_wait_id := 0
 var _review_watch := 0.0
 var _review_mtime := -1
-var _old_tooltip_delay := 0.5
 
 func _enter_tree() -> void:
 	print("[HoverTranslator] loaded")
 	_define_settings()
-	# The native tooltip would cover the card. Delay it instead of clearing
-	# tooltip_text (the probe still reads tooltip_text for reverse lookup).
-	_old_tooltip_delay = float(ProjectSettings.get_setting("gui/timers/tooltip_delay_sec", 0.5))
-	ProjectSettings.set_setting("gui/timers/tooltip_delay_sec", 9999.0)
 	translator = TranslatorScript.new()
 	base = EditorInterface.get_base_control()
 	probe = ProbeScript.new(base, translator)
@@ -88,7 +84,6 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	set_process(false)
-	ProjectSettings.set_setting("gui/timers/tooltip_delay_sec", _old_tooltip_delay)
 	if _dock:
 		remove_control_from_bottom_panel(_dock)
 		_dock.queue_free()
@@ -129,14 +124,30 @@ func _process(delta: float) -> void:
 
 	if base == null or not is_instance_valid(base):
 		return
+	var raw_mouse := base.get_viewport().get_mouse_position()
+	if raw_mouse != Vector2.ZERO:
+		_last_valid_mouse = raw_mouse
+	elif _last_valid_mouse == Vector2.ZERO:
+		var screen_mouse := DisplayServer.mouse_get_position()
+		var mapped := base.get_global_transform_with_canvas().affine_inverse() * Vector2(screen_mouse)
+		if mapped != Vector2.ZERO:
+			_last_valid_mouse = mapped
+	var mouse_global := raw_mouse if raw_mouse != Vector2.ZERO else _last_valid_mouse
 	_tooltip_guard -= delta
 	if _tooltip_guard <= 0.0:
 		_tooltip_guard = 0.05
-		_hide_native_tooltips(base.get_viewport().get_mouse_position())
-	var mouse_global := base.get_viewport().get_mouse_position()
+		_update_tooltip_avoidance(mouse_global)
 	var mouse_local := base.get_global_transform().affine_inverse() * mouse_global
 	var target: Dictionary = probe.find(mouse_global)
 	if target.is_empty():
+		var tooltip_rects: Array[Rect2] = probe.native_tooltip_rects(mouse_global)
+		if not tooltip_rects.is_empty() and not _last_result.is_empty():
+			# The native help popup temporarily owns the pointer. Keep the
+			# last card visible and just move it out of the popup's way.
+			overlay.set_avoid_rects(tooltip_rects)
+			if bool(ProjectSettings.get_setting("hover_translator/follow_mouse", true)):
+				overlay.move_card(mouse_local)
+			return
 		overlay.hide_card()
 		_last_key = ""
 		_last_result = {}
@@ -191,8 +202,8 @@ func _process(delta: float) -> void:
 	_last_result = result.duplicate(true)
 
 	if bool(ProjectSettings.get_setting("hover_translator/show_card", true)):
+		overlay.set_avoid_rects(probe.native_tooltip_rects(mouse_global))
 		overlay.show_result(result, mouse_local)
-		_hide_native_tooltips(mouse_global)
 	else:
 		overlay.hide_card()
 	_update_dock_result(result)
@@ -513,28 +524,14 @@ func _on_speak_toggled(on: bool) -> void:
 	ProjectSettings.set_setting("hover_translator/speak", on)
 	ProjectSettings.save()
 
-func _hide_native_tooltips(mouse_global: Vector2) -> void:
-	# Godot's editor tooltip is a small popup window. It would appear on top of
-	# our card after its own delay, so hide only small windows near the cursor.
-	# Context menus and real dialogs are left alone.
-	var tree := get_tree()
-	if tree == null:
+func _update_tooltip_avoidance(mouse_global: Vector2) -> void:
+	if overlay == null or probe == null or base == null or not is_instance_valid(base):
 		return
-	for node in tree.root.find_children("*", "Window", true, false):
-		if not (node is Window):
-			continue
-		if node is PopupMenu:
-			continue
-		if node is AcceptDialog or node is ConfirmationDialog or node is FileDialog:
-			continue
-		var pop := node as Window
-		if not pop.visible:
-			continue
-		if not (pop is PopupPanel) and not pop.borderless:
-			continue
-		var r := Rect2(Vector2(pop.position), Vector2(pop.size))
-		if r.size.x <= 1200.0 and r.size.y <= 900.0 and r.grow(60.0).has_point(mouse_global):
-			pop.hide()
+	var rects: Array[Rect2] = probe.native_tooltip_rects(mouse_global)
+	overlay.set_avoid_rects(rects)
+	if overlay.visible and bool(ProjectSettings.get_setting("hover_translator/follow_mouse", true)):
+		var mouse_local := base.get_global_transform().affine_inverse() * mouse_global
+		overlay.move_card(mouse_local)
 
 func _on_card_toggled(on: bool) -> void:
 	ProjectSettings.set_setting("hover_translator/show_card", on)

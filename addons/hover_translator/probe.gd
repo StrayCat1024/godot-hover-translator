@@ -32,12 +32,39 @@ func find(mouse_pos: Vector2) -> Dictionary:
 			var pop := _popup_target(w as PopupMenu, mouse_pos)
 			if not pop.is_empty():
 				return pop
+		if _is_tooltip_window(w):
+			# Keep the native tooltip visible, but do not let it steal the
+			# hover target from the editor control underneath.
+			continue
 		var c: Control = w.gui_get_hovered_control()
 		if c and c.is_visible_in_tree():
 			var target := _from_control(c, mouse_pos)
 			if not target.is_empty():
 				return target
 	return {}
+
+func native_tooltip_rects(mouse_pos: Vector2) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	if _windows.is_empty():
+		_rebuild_windows()
+	for w in _windows:
+		if not is_instance_valid(w) or not w.visible:
+			continue
+		if not _is_tooltip_window(w):
+			continue
+		var r := Rect2(Vector2(w.position), Vector2(w.size))
+		if w.get_class() == "EditorHelpBitTooltip" or r.grow(120.0).has_point(mouse_pos):
+			out.append(r)
+	return out
+
+func _is_tooltip_window(w: Window) -> bool:
+	if w is PopupMenu or w is AcceptDialog or w is ConfirmationDialog or w is FileDialog:
+		return false
+	if w is PopupPanel:
+		return true
+	if w.borderless and w.size.x > 0 and w.size.y > 0 and w.size.x <= 1400.0 and w.size.y <= 1000.0:
+		return true
+	return false
 
 func _rebuild_windows() -> void:
 	_windows.clear()
