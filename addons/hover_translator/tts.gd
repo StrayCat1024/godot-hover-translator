@@ -100,6 +100,9 @@ func restart() -> void:
 func is_ready() -> bool:
 	return _ready_flag and pid > 0 and OS.is_process_running(pid)
 
+func current_voice() -> String:
+	return _voice
+
 func status() -> String:
 	if _permanent:
 		return "语音不可用：" + _friendly_error(last_error)

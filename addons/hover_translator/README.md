@@ -131,6 +131,23 @@ AI 审核时修改 `online_review.json` 里的 `zh`，把 `bucket` 改成：
 
 代码标识符会先拆词（`get_viewport_rect` → `get viewport rect`）再请求，避免把下划线当成一个单词。
 
+## 语音检测与安装
+
+插件启动时会自动检测语音后端：
+
+- Edge TTS：Python + `edge-tts`
+- Windows 系统语音（SAPI）
+
+检测结果显示在底部 **“划词翻译”** 面板：
+
+- 绿色：Edge 在线语音可用
+- 黄色：Edge 不可用，自动改用 Windows 系统语音
+- 红色：两者都不可用
+
+红色时点面板里的 **安装 Edge TTS**（需要 Python）或 **下载 Python**。安装 Python 时勾选 **Add python.exe to PATH**；装完 Python 后先重启编辑器，再点 **重新检测语音**。安装完 edge-tts 后也点一下 **重新检测语音**。
+
+没有 edge-tts 时插件会自动使用 Windows 英文语音，所以大多数情况下不装 Python 也能出声。
+
 ## 音频实现
 
 优先使用外部 **Edge TTS**：插件调用 `python -m edge_tts` 生成 MP3，默认音色 `en-US-GuyNeural`（统一男声），再用 Godot 的 `AudioStreamPlayer` 播放。这样不经过 SAPI，也不调用会崩溃的 `DisplayServer.tts_*`。
@@ -139,11 +156,14 @@ AI 审核时修改 `online_review.json` 里的 `zh`，把 `bucket` 改成：
 - 播放后缓存到：
   `%USERPROFILE%\AppData\LocalLow\HoverTranslator\tts_edge\<hash>.mp3`
 - 第二次划到同一个词：直接读本地 MP3，零生成延迟；
-- 需要本机 Python 和 `edge-tts`：
-  `python -m pip install edge-tts`
+- 推荐安装 Python 和 `edge-tts`：
+  `python -m pip install --user edge-tts`
+  （也可以直接在“划词翻译”面板点 **安装 Edge TTS**）
 - 如果想换音色，改 `online_voice_name`，例如 `en-US-AriaNeural`（女声）、`en-GB-RyanNeural`（英式男声）。
 
-SAPI 只在关闭 `online_voice` 时作为离线备选。如果 Godot 在 **低完整性 / 沙箱进程** 中启动，Windows 会拒绝 SAPI 访问（日志里是“没有当前安全设置可用的语音”或 `Access denied`），这时保持 `online_voice = true` 即可。
+Edge 不可用时，插件会自动改用 SAPI，并自动选一个可用的英文声音（配置的语音不存在也能用）。两者都不可用时，面板会显示红色提示和安装按钮。
+
+如果 Godot 在 **低完整性 / 沙箱进程** 中启动，Windows 会拒绝 SAPI 访问（日志里是“没有当前安全设置可用的语音”或 `Access denied`），这时保持 `online_voice = true` 即可。
 
 语音日志（SAPI 路径）：
 

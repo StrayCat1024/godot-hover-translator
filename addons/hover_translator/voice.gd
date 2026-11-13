@@ -14,6 +14,13 @@ var voice_name := DEFAULT_VOICE
 var timeout := 15.0
 var volume_db := -3.0
 
+var python_cmd := "python"
+var python_args: PackedStringArray = []
+var python_found := false
+var available := false
+var checked := false
+var probe_error := ""
+
 var _player: AudioStreamPlayer
 var _mem: Dictionary = {}
 var _cache_dir := ""
@@ -38,8 +45,48 @@ func _ready() -> void:
 	_player.bus = "Master"
 	add_child(_player)
 
+func detect_available() -> bool:
+	checked = true
+	available = false
+	python_found = false
+	probe_error = ""
+	var candidates: Array = [
+		["py", PackedStringArray(["-3"])],
+		["python", PackedStringArray()],
+		["python3", PackedStringArray()],
+	]
+	for cand in candidates:
+		var exe := String(cand[0])
+		var prefix: PackedStringArray = cand[1]
+		if exe != "py":
+			# Skip the Microsoft Store alias: running it opens the Store.
+			var where_out: Array = []
+			OS.execute("where", [exe], where_out, true)
+			var first_path := String(where_out[0]).strip_edges() if where_out.size() > 0 else ""
+			if first_path.to_lower().contains("windowsapps"):
+				continue
+		var out: Array = []
+		if OS.execute(exe, prefix + PackedStringArray(["-c", "print('ok')"]), out, true) != 0:
+			continue
+		python_found = true
+		python_cmd = exe
+		python_args = prefix
+		out.clear()
+		if OS.execute(exe, prefix + PackedStringArray(["-c", "import edge_tts"]), out, true) == 0:
+			available = true
+			_last_error = ""
+			return true
+		probe_error = String(out[0]).strip_edges() if out.size() > 0 else ""
+	if python_found:
+		_last_error = "未安装 edge-tts，请点“安装 Edge TTS”"
+	else:
+		_last_error = "未检测到 Python，请先安装 Python 或改用 Windows 系统语音"
+	return false
+
 func speak(text: String) -> bool:
 	if not enabled:
+		return false
+	if checked and not available:
 		return false
 	var clean := text.strip_edges()
 	if clean == "":
@@ -66,8 +113,7 @@ func speak(text: String) -> bool:
 		# The current process will finish and cache its result, then the latest
 		# text is started (or played from cache).
 		return true
-	_start(clean, seq)
-	return true
+	return _start(clean, seq)
 
 func is_busy() -> bool:
 	return _busy
@@ -75,6 +121,10 @@ func is_busy() -> bool:
 func status_text() -> String:
 	if not enabled:
 		return "在线语音：已关闭"
+	if checked and not available:
+		if python_found:
+			return "在线语音：未安装 edge-tts（点“安装 Edge TTS”）"
+		return "在线语音：未检测到 Python（点“下载 Python”）"
 	if _busy:
 		return "在线语音：正在生成（%s）…" % voice_name
 	if _last_error != "":
@@ -104,7 +154,7 @@ func _process(_delta: float) -> void:
 		return
 	_finish_process()
 
-func _start(text: String, seq: int) -> void:
+func _start(text: String, seq: int) -> bool:
 	_active_text = text
 	_active_seq = seq
 	_active_started_ms = Time.get_ticks_msec()
@@ -113,20 +163,26 @@ func _start(text: String, seq: int) -> void:
 	_active_path = _path_for(key)
 	if FileAccess.file_exists(_active_path):
 		DirAccess.remove_absolute(_active_path)
-	var args := [
+	var args := python_args.duplicate()
+	args.append_array(PackedStringArray([
 		"-m", "edge_tts",
 		"--voice", voice_name,
 		"--text", text,
 		"--write-media", _active_path,
-	]
-	_active_pid = OS.create_process("python", args)
-	if _active_pid <= 0:
+	]))
+	_active_pid = OS.create_process(python_cmd, args)
+	if _active_pid <= 0 and python_cmd == "python":
 		_active_pid = OS.create_process("pythonw", args)
+	elif _active_pid <= 0 and python_cmd == "py":
+		_active_pid = OS.create_process("pyw", args)
 	if _active_pid <= 0:
 		_busy = false
+		available = false
+		checked = true
 		_finish_failure("找不到 Python / edge-tts，请先安装 edge-tts")
-		return
+		return false
 	_busy = true
+	return true
 
 func _finish_process() -> void:
 	var seq := _active_seq
@@ -143,7 +199,11 @@ func _finish_process() -> void:
 			_play(stream)
 	else:
 		_last_error = "语音生成失败（edge-tts 未返回有效 MP3）"
-	if seq != _latest_seq and _latest_text != "":
+		# Let the next hover fall back to Windows SAPI instead of retrying a
+		# backend that is evidently not working.
+		available = false
+		checked = true
+	if available and seq != _latest_seq and _latest_text != "":
 		var latest_key := _key(_latest_text)
 		if _mem.has(latest_key):
 			_play(_mem[latest_key])
@@ -152,7 +212,7 @@ func _finish_process() -> void:
 
 func _finish_failure(message: String) -> void:
 	_last_error = message
-	if _latest_text != "" and _latest_seq != _active_seq:
+	if available and _latest_text != "" and _latest_seq != _active_seq:
 		_start(_latest_text, _latest_seq)
 
 func _play(stream: AudioStream) -> void:

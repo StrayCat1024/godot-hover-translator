@@ -43,6 +43,9 @@ var _card_check: CheckBox
 var _online_check: CheckBox
 var _enabled_check: CheckBox
 var _follow_check: CheckBox
+var _voice_health: Label
+var _install_voice_btn: Button
+var _voice_warned := false
 var _rate_spin: SpinBox
 var _voice_edit: LineEdit
 var _status_refresh := 0.0
@@ -82,6 +85,7 @@ func _enter_tree() -> void:
 	_configure_voice()
 
 	_build_dock()
+	_detect_voice.call_deferred()
 	set_process(true)
 
 func _exit_tree() -> void:
@@ -304,15 +308,26 @@ func _speak_english(text: String) -> bool:
 	if voice != null and bool(voice.enabled):
 		if bool(voice.speak(say)):
 			return true
-	if tts != null and tts.is_ready():
+	# Edge is unavailable (or its process could not start): use Windows SAPI.
+	# tts.speak() starts the helper lazily, so the first word is buffered until
+	# the voice is ready instead of being silently dropped.
+	if tts != null:
 		if bool(tts.speak(say)):
 			return true
 	return false
 
 func _refresh_status() -> void:
+	_update_voice_health()
 	if _status != null:
 		if voice != null and bool(voice.enabled):
-			_status.text = "朗读：Edge 在线语音（外部，统一男声）"
+			if voice.available:
+				_status.text = "朗读：Edge 在线语音（可用）"
+			elif tts != null and tts.is_ready():
+				_status.text = "朗读：Windows 系统语音（Edge 未安装，已自动改用系统语音）"
+			elif voice.checked:
+				_status.text = "朗读：语音不可用（见下方提示）"
+			else:
+				_status.text = "朗读：正在检测语音…"
 		elif tts != null:
 			_status.text = tts.status()
 	if _speech_status != null and voice != null:
@@ -399,6 +414,13 @@ func _build_dock() -> void:
 	_online_status.add_theme_font_size_override("font_size", 10)
 	_online_status.add_theme_color_override("font_color", Color(0.55, 0.68, 0.72))
 	root.add_child(_online_status)
+
+	_voice_health = Label.new()
+	_voice_health.text = "语音：正在检测…"
+	_voice_health.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_voice_health.add_theme_font_size_override("font_size", 11)
+	_voice_health.add_theme_color_override("font_color", Color(0.65, 0.72, 0.82))
+	root.add_child(_voice_health)
 
 	var row1 := HBoxContainer.new()
 	row1.add_theme_constant_override("separation", 12)
@@ -509,6 +531,20 @@ func _build_dock() -> void:
 	clear_history_btn.pressed.connect(_on_clear_history)
 	row3.add_child(clear_history_btn)
 
+	var row4 := HBoxContainer.new()
+	row4.add_theme_constant_override("separation", 8)
+	root.add_child(row4)
+
+	_install_voice_btn = Button.new()
+	_install_voice_btn.text = "安装 Edge TTS"
+	_install_voice_btn.pressed.connect(_on_install_voice)
+	row4.add_child(_install_voice_btn)
+
+	var recheck_voice_btn := Button.new()
+	recheck_voice_btn.text = "重新检测语音"
+	recheck_voice_btn.pressed.connect(_on_recheck_voice)
+	row4.add_child(recheck_voice_btn)
+
 	var import_review_btn := Button.new()
 	import_review_btn.text = "导入审核结果"
 	import_review_btn.pressed.connect(_on_import_review)
@@ -571,6 +607,75 @@ func _on_follow_native_toggled(on: bool) -> void:
 
 func _follow_native() -> bool:
 	return bool(ProjectSettings.get_setting("hover_translator/follow_native_tooltip", true))
+
+func _detect_voice() -> void:
+	var edge_ok := false
+	if voice != null and bool(voice.enabled):
+		edge_ok = voice.detect_available()
+	if not edge_ok and tts != null and not tts.is_ready() and not tts.started:
+		tts.restart()
+	elif edge_ok and tts != null and tts.is_ready():
+		tts.stop()
+	_refresh_status()
+	if not edge_ok:
+		# SAPI needs a moment to start; only warn after it had a chance.
+		await get_tree().create_timer(2.5).timeout
+		if not is_inside_tree():
+			return
+		if not _voice_warned and (tts == null or not tts.is_ready()):
+			_voice_warned = true
+			_warn_voice()
+
+func _update_voice_health() -> void:
+	if _voice_health == null:
+		return
+	var edge_on: bool = voice != null and bool(voice.enabled)
+	var edge_ok: bool = edge_on and bool(voice.available)
+	var sapi_ok: bool = tts != null and bool(tts.is_ready())
+	if edge_ok:
+		_voice_health.text = "语音：Edge 在线语音可用"
+		_voice_health.add_theme_color_override("font_color", Color(0.55, 0.85, 0.65))
+	elif sapi_ok:
+		_voice_health.text = "语音：Windows 系统语音可用（%s）" % tts.current_voice()
+		_voice_health.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45))
+	elif edge_on and not voice.checked:
+		_voice_health.text = "语音：正在检测…"
+		_voice_health.add_theme_color_override("font_color", Color(0.65, 0.72, 0.82))
+	elif not edge_on:
+		_voice_health.text = "语音：在线语音已关闭，系统语音不可用"
+		_voice_health.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
+	else:
+		_voice_health.text = "语音：不可用。请安装 Edge TTS（推荐）或 Windows 英文语音。"
+		_voice_health.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
+	if _install_voice_btn != null:
+		_install_voice_btn.text = "下载 Python" if (voice != null and voice.checked and not voice.python_found) else "安装 Edge TTS"
+
+func _on_install_voice() -> void:
+	if voice == null:
+		return
+	if not voice.checked:
+		voice.detect_available()
+	if not voice.python_found:
+		OS.shell_open("https://www.python.org/downloads/windows/")
+		return
+	var prefix := ""
+	for a in voice.python_args:
+		prefix += " " + String(a)
+	var cmd := "& '%s'%s -m pip install --user edge-tts" % [voice.python_cmd, prefix]
+	OS.create_process("powershell.exe", PackedStringArray(["-NoExit", "-Command", cmd]))
+
+func _on_recheck_voice() -> void:
+	_voice_warned = false
+	_detect_voice()
+
+func _warn_voice() -> void:
+	var msg := "Hover Translator：没有可用的英文语音。打开底部“划词翻译”面板，点“安装 Edge TTS”，或安装 Windows 英文语音。"
+	if EditorInterface.has_method("get_editor_toaster"):
+		var toaster = EditorInterface.get_editor_toaster()
+		if toaster != null and toaster.has_method("push_toast"):
+			toaster.push_toast(msg, 1, "Hover Translator")
+			return
+	push_warning(msg)
 
 func _update_tooltip_avoidance(mouse_global: Vector2) -> void:
 	if overlay == null or probe == null or base == null or not is_instance_valid(base):
