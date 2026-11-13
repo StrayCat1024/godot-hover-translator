@@ -232,15 +232,34 @@ func _layout(mouse_pos: Vector2) -> void:
 	var gap := 16.0
 	var candidates: Array[Vector2] = []
 	if not _avoid_rects.is_empty():
-		# The native help popup is a separate window and will always draw
-		# above this Control. Put the card on the opposite side of it.
+		# Put the card directly beside the native help popup, like a sidecar.
+		# If neither side fits, fall back to above/below, then to a screen edge.
 		var tip := _avoid_rects[0]
-		var lane_y := clampf(mouse_pos.y - h * 0.5, 12.0, maxf(12.0, vp.y - h - 12.0))
-		if tip.get_center().x < vp.x * 0.5:
-			panel.position = Vector2(vp.x - w - 12.0, lane_y)
-		else:
-			panel.position = Vector2(12.0, lane_y)
+		var side_gap := 8.0
+		var y := clampf(tip.position.y, 8.0, maxf(8.0, vp.y - h - 8.0))
+		var left_x := tip.position.x - w - side_gap
+		var right_x := tip.position.x + tip.size.x + side_gap
+		var placed := false
+		if left_x >= 8.0:
+			panel.position = Vector2(left_x, y)
+			placed = true
+		elif right_x + w <= vp.x - 8.0:
+			panel.position = Vector2(right_x, y)
+			placed = true
+		if not placed:
+			var above_y := tip.position.y - h - side_gap
+			var below_y := tip.position.y + tip.size.y + side_gap
+			var centered_x := clampf(mouse_pos.x - w * 0.5, 8.0, maxf(8.0, vp.x - w - 8.0))
+			if above_y >= 8.0:
+				panel.position = Vector2(centered_x, above_y)
+				placed = true
+			elif below_y + h <= vp.y - 8.0:
+				panel.position = Vector2(centered_x, below_y)
+				placed = true
+		if not placed:
+			panel.position = Vector2(12.0, y)
 		panel.position.x = clampf(panel.position.x, 8.0, maxf(8.0, vp.x - w - 8.0))
+		panel.position.y = clampf(panel.position.y, 8.0, maxf(8.0, vp.y - h - 8.0))
 		accent.position = panel.position + Vector2(0, 7)
 		accent.size = Vector2(3, h - 14)
 		accent.visible = true
