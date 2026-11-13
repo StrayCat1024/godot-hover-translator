@@ -31,7 +31,7 @@ python -m pip install edge-tts
 addons/hover_translator/AI_CLASSIFICATION.md
 ```
 
-文档里已经要求 AI：**不要一步步手改 JSON，直接给出一整条可复制运行的 PowerShell 脚本。**
+文档里已经要求 AI：**不要一步步手改 JSON，直接给出一整条可复制运行的 PowerShell 脚本。** 脚本含中文，保存成 `.ps1` 时用 UTF-8 with BOM，或者直接粘贴到 PowerShell 窗口运行。
 
 ## 词库位置
 

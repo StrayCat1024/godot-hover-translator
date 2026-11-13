@@ -11,6 +11,7 @@
 
 - 用 `[IO.File]::ReadAllText(..., [Text.Encoding]::UTF8)` 读
 - 用 `[IO.File]::WriteAllText(..., [Text.UTF8Encoding]::new($false))` 写
+- 脚本含中文，保存成 `.ps1` 时用 **UTF-8 with BOM**，或直接粘贴到 PowerShell 窗口运行
 - 保留备份
 - 写完再用 `ConvertFrom-Json` 校验
 - 不要用 `Set-Content` / `Out-File` 默认编码

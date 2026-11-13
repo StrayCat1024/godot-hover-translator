@@ -14,6 +14,7 @@
 - 脚本必须是完整可执行的，不留 `...`、`<这里填>`、`TODO` 之类占位符；需要改的内容直接写进脚本里的 `$changes` 数组。
 - 只输出一个 `powershell` 代码块。不要在同一条回复里给多个互不完整的脚本。
 - 不要用 `Set-Content` / `Out-File` 的默认编码写 JSON，会把中文写坏；必须用 `[IO.File]::WriteAllText(..., [Text.UTF8Encoding]::new($false))`。
+- 脚本本身含中文，**保存成 `.ps1` 时要用 UTF-8 with BOM**（Windows PowerShell 5.1 默认按 ANSI 读无 BOM 文件，会把中文读坏）；更简单的办法是直接粘贴到 PowerShell 窗口运行，或用 `pwsh` 7 运行。
 - 不确定的词不要 `approved`，留在 `pending`；脚本里也不要替用户猜。
 
 推荐脚本骨架：
