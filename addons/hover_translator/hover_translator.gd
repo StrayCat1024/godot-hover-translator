@@ -41,6 +41,8 @@ var _history_zh: Array[String] = []
 var _speak_check: CheckBox
 var _card_check: CheckBox
 var _online_check: CheckBox
+var _enabled_check: CheckBox
+var _follow_check: CheckBox
 var _rate_spin: SpinBox
 var _voice_edit: LineEdit
 var _status_refresh := 0.0
@@ -144,7 +146,10 @@ func _process(delta: float) -> void:
 		if not tooltip_rects.is_empty() and not _last_result.is_empty():
 			# The native help popup temporarily owns the pointer. Keep the
 			# last card visible and just move it out of the popup's way.
-			overlay.set_avoid_rects(tooltip_rects)
+			var avoid: Array[Rect2] = []
+			if _follow_native():
+				avoid = tooltip_rects
+			overlay.set_avoid_rects(avoid)
 			if bool(ProjectSettings.get_setting("hover_translator/follow_mouse", true)):
 				overlay.move_card(mouse_local)
 			return
@@ -202,7 +207,10 @@ func _process(delta: float) -> void:
 	_last_result = result.duplicate(true)
 
 	if bool(ProjectSettings.get_setting("hover_translator/show_card", true)):
-		overlay.set_avoid_rects(probe.native_tooltip_rects(mouse_global))
+		var tip_rects: Array[Rect2] = []
+		if _follow_native():
+			tip_rects = probe.native_tooltip_rects(mouse_global)
+		overlay.set_avoid_rects(tip_rects)
 		overlay.show_result(result, mouse_local)
 	else:
 		overlay.hide_card()
@@ -317,6 +325,7 @@ func _define_settings() -> void:
 	_add_bool("hover_translator/speak", true, "悬停时朗读英文")
 	_add_bool("hover_translator/follow_mouse", true, "浮窗跟随鼠标")
 	_add_bool("hover_translator/show_card", true, "显示翻译浮窗")
+	_add_bool("hover_translator/follow_native_tooltip", true, "有原生提示时让卡片跟随原生提示（关闭则始终跟着鼠标）")
 	_add_bool("hover_translator/online_fallback", true, "本地词典未命中时联网翻译")
 	_add_bool("hover_translator/online_voice", true, "系统语音不可用时使用在线语音")
 	_add_bool("hover_translator/auto_apply_review", true, "审核文件出现 approved 时自动导入词库")
@@ -394,6 +403,12 @@ func _build_dock() -> void:
 	row1.add_theme_constant_override("separation", 12)
 	root.add_child(row1)
 
+	_enabled_check = CheckBox.new()
+	_enabled_check.text = "启用插件"
+	_enabled_check.button_pressed = bool(ProjectSettings.get_setting("hover_translator/enabled", true))
+	_enabled_check.toggled.connect(_on_enabled_toggled)
+	row1.add_child(_enabled_check)
+
 	_speak_check = CheckBox.new()
 	_speak_check.text = "朗读英文"
 	_speak_check.button_pressed = bool(ProjectSettings.get_setting("hover_translator/speak", true))
@@ -411,6 +426,16 @@ func _build_dock() -> void:
 	_online_check.button_pressed = bool(ProjectSettings.get_setting("hover_translator/online_fallback", true))
 	_online_check.toggled.connect(_on_online_toggled)
 	row1.add_child(_online_check)
+
+	var row1b := HBoxContainer.new()
+	row1b.add_theme_constant_override("separation", 12)
+	root.add_child(row1b)
+
+	_follow_check = CheckBox.new()
+	_follow_check.text = "卡片跟随原生提示（关闭 = 自由跟随鼠标）"
+	_follow_check.button_pressed = bool(ProjectSettings.get_setting("hover_translator/follow_native_tooltip", true))
+	_follow_check.toggled.connect(_on_follow_native_toggled)
+	row1b.add_child(_follow_check)
 
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 8)
@@ -524,10 +549,29 @@ func _on_speak_toggled(on: bool) -> void:
 	ProjectSettings.set_setting("hover_translator/speak", on)
 	ProjectSettings.save()
 
+func _on_enabled_toggled(on: bool) -> void:
+	ProjectSettings.set_setting("hover_translator/enabled", on)
+	ProjectSettings.save()
+	if not on:
+		if overlay:
+			overlay.hide_card()
+		_last_key = ""
+		_last_result = {}
+
+func _on_follow_native_toggled(on: bool) -> void:
+	ProjectSettings.set_setting("hover_translator/follow_native_tooltip", on)
+	ProjectSettings.save()
+	_tooltip_guard = 0.0
+
+func _follow_native() -> bool:
+	return bool(ProjectSettings.get_setting("hover_translator/follow_native_tooltip", true))
+
 func _update_tooltip_avoidance(mouse_global: Vector2) -> void:
 	if overlay == null or probe == null or base == null or not is_instance_valid(base):
 		return
-	var rects: Array[Rect2] = probe.native_tooltip_rects(mouse_global)
+	var rects: Array[Rect2] = []
+	if _follow_native():
+		rects = probe.native_tooltip_rects(mouse_global)
 	overlay.set_avoid_rects(rects)
 	if overlay.visible and bool(ProjectSettings.get_setting("hover_translator/follow_mouse", true)):
 		var mouse_local := base.get_global_transform().affine_inverse() * mouse_global

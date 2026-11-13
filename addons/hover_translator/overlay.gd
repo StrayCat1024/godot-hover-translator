@@ -14,6 +14,10 @@ var _font: SystemFont
 var _last_mouse := Vector2(-10000, -10000)
 var _current_word := ""
 var _avoid_rects: Array[Rect2] = []
+# Latch the quadrant while one tooltip stays open, otherwise tiny pointer
+# movements near the tooltip's center make the card flip sides.
+var _tip_rect := Rect2()
+var _tip_side := 0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -242,9 +246,16 @@ func _layout(mouse_pos: Vector2) -> void:
 		# popup's near vertical edge, so the two rectangles line up.
 		var tip := _primary_tooltip(mouse_pos)
 		var side_gap := 8.0
-		var center := tip.get_center()
-		var on_right := center.x >= mouse_pos.x
-		var tip_below := center.y >= mouse_pos.y
+		if tip != _tip_rect:
+			_tip_rect = tip
+			var center := tip.get_center()
+			_tip_side = 0
+			if center.x >= mouse_pos.x:
+				_tip_side |= 1
+			if center.y >= mouse_pos.y:
+				_tip_side |= 2
+		var on_right := (_tip_side & 1) != 0
+		var tip_below := (_tip_side & 2) != 0
 		var x := tip.position.x if on_right else tip.position.x + tip.size.x - w
 		var y := tip.position.y - h - side_gap if tip_below else tip.position.y + tip.size.y + side_gap
 		x = clampf(x, 8.0, maxf(8.0, vp.x - w - 8.0))
@@ -280,6 +291,7 @@ func _layout(mouse_pos: Vector2) -> void:
 		accent.size = Vector2(3, h - 14)
 		accent.visible = true
 		return
+	_tip_rect = Rect2()
 	candidates.append_array([
 		Vector2(mouse_pos.x + 20.0, mouse_pos.y + 22.0),
 		Vector2(mouse_pos.x - w - gap, mouse_pos.y + 22.0),
