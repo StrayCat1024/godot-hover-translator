@@ -2,6 +2,21 @@
 
 完整规则在插件目录的 `AI_CLASSIFICATION.md`。这里只放最短版本。
 
+## 给 AI 的输出格式
+
+不要给“打开文件、找到某行、手动改”的步骤，也不要给零散 JSON 片段。  
+直接给用户**一整条可复制运行的 PowerShell 脚本**：备份 → 读取 → 批量修改 → 校验 → 写回。
+
+脚本里必须：
+
+- 用 `[IO.File]::ReadAllText(..., [Text.Encoding]::UTF8)` 读
+- 用 `[IO.File]::WriteAllText(..., [Text.UTF8Encoding]::new($false))` 写
+- 保留备份
+- 写完再用 `ConvertFrom-Json` 校验
+- 不要用 `Set-Content` / `Out-File` 默认编码
+
+不确定的词保持 `pending`，不要 `approved`。
+
 ## bucket 只能填四个
 
 ```text

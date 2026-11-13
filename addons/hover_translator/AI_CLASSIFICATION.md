@@ -4,6 +4,59 @@
 
 ---
 
+## 0. 给 AI 的交付格式（硬性要求）
+
+当用户让你审核、修改或新增词条时：
+
+- **不要**输出“先打开文件、找到某一行、手动改这个字段”的分步教程。
+- **不要**只给零散的 JSON 片段。
+- **直接给出一整条可复制运行的 PowerShell 脚本**，一次完成：备份 → 读取 → 批量修改 → 校验 → 写回 → 打印结果。
+- 脚本必须是完整可执行的，不留 `...`、`<这里填>`、`TODO` 之类占位符；需要改的内容直接写进脚本里的 `$changes` 数组。
+- 只输出一个 `powershell` 代码块。不要在同一条回复里给多个互不完整的脚本。
+- 不要用 `Set-Content` / `Out-File` 的默认编码写 JSON，会把中文写坏；必须用 `[IO.File]::WriteAllText(..., [Text.UTF8Encoding]::new($false))`。
+- 不确定的词不要 `approved`，留在 `pending`；脚本里也不要替用户猜。
+
+推荐脚本骨架：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+
+$path = Join-Path $env:USERPROFILE 'AppData\LocalLow\HoverTranslator\review\online_review.json'
+$backup = "$path.bak_$(Get-Date -Format yyyyMMdd_HHmmss)"
+Copy-Item -LiteralPath $path -Destination $backup
+
+$data = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8) | ConvertFrom-Json
+
+# 只改 zh / bucket / status；key 必须和 review 文件里的 key 完全一致
+$changes = @(
+    @{ key = 'code|player_speed'; zh = '玩家速度'; bucket = 'custom_api'; status = 'approved' },
+    @{ key = 'ui|physics interpolation'; zh = '物理插值'; bucket = 'godot_api'; status = 'approved' }
+)
+
+foreach ($c in $changes) {
+    $prop = $data.entries.PSObject.Properties[$c.key]
+    if ($null -eq $prop) { throw "找不到词条：$($c.key)" }
+    $entry = $prop.Value
+    if ($c.zh) { $entry.zh = $c.zh }
+    $entry.bucket = $c.bucket
+    $entry.status = $c.status
+}
+
+$out = $data | ConvertTo-Json -Depth 20
+[IO.File]::WriteAllText($path, $out, [Text.UTF8Encoding]::new($false))
+
+# 写回后立即校验，坏 JSON 会在这里直接报错
+$null = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8) | ConvertFrom-Json
+
+Write-Host "OK：已更新 $($changes.Count) 条；备份：$backup"
+```
+
+如果用户要改的是正式词库而不是审核文件，也按同样原则：**一条完整 PowerShell 脚本**，包含备份、UTF-8 读写和结果校验。
+
+注意 key 是 `kind|en.to_lower()`，所以 `Physics Interpolation` 的 key 是 `ui|physics interpolation`，不要写成大写。
+
+---
+
 ## 1. 词库结构
 
 ```text
