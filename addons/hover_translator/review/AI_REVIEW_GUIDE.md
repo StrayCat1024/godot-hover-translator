@@ -1,0 +1,51 @@
+# 审核前先读我
+
+完整规则在插件目录的 `AI_CLASSIFICATION.md`。这里只放最短版本。
+
+## bucket 只能填四个
+
+```text
+main
+godot_api
+custom_api
+grammar
+```
+
+## 决策顺序
+
+1. 先判断上下文是不是 code。
+2. code 里：
+   - GDScript 关键字/运算符 → `grammar`
+   - Godot 引擎类/API/属性/虚方法 → `godot_api`
+   - 用户自己定义的变量/函数/类/属性/信号 → `custom_api`
+3. 非 code → `main`
+4. 拿不准 → 保持 `pending`，不要 `approved`。
+
+## 只改三个字段
+
+```json
+"zh": "正确中文",
+"bucket": "godot_api",
+"status": "approved"
+```
+
+不要改 `en`、key、`kind`、`context`，不要重复造条目。
+
+## 记住
+
+- 首字母大写不一定是 Godot API；`class_name MyPlayer` 是 `custom_api`。
+- 检查器属性 `Transform` / `Physics Interpolation` 是 `godot_api`。
+- `if` / `var` / `await` 是 `grammar`。
+- `player_speed` / `health_changed` 是 `custom_api`。
+- 长句 tooltip、菜单、按钮、文件类型说明 → `main`。
+- 主词库不会被在线结果自动写入，只有 `tmp_other` 审核通过才进 `main`。
+- `approved` 后插件会自动导入；不确定就留在 `pending`。
+
+## 真实文件位置
+
+```text
+%USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
+%USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
+```
+
+插件目录里的 `data/` 只是种子，不要改错。
