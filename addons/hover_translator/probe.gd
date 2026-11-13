@@ -221,7 +221,14 @@ func _item_list_target(list: ItemList, _mouse_pos: Vector2) -> Dictionary:
 
 func _tab_target(tab: TabBar, _mouse_pos: Vector2) -> Dictionary:
 	var local := tab.get_local_mouse_position()
-	var idx: int = tab.get_tab_at_pos(local)
+	var idx := -1
+	if tab.has_method("get_tab_idx_at_point"):
+		idx = int(tab.call("get_tab_idx_at_point", local))
+	elif tab.has_method("get_tab_rect"):
+		for i in tab.get_tab_count():
+			if tab.get_tab_rect(i).has_point(local):
+				idx = i
+				break
 	if idx >= 0:
 		var t := tab.get_tab_title(idx)
 		if t.strip_edges() != "" and _has_letters(t):
