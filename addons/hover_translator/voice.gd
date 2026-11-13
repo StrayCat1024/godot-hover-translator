@@ -35,6 +35,11 @@ var _latest_text := ""
 var _last_error := ""
 var _downloads := 0
 var _hits := 0
+var _prepare_pid := -1
+var _prepare_path := ""
+var _prepare_key := ""
+var _prepare_started := 0
+var _prepare_busy := false
 
 func _ready() -> void:
 	set_process(true)
@@ -50,38 +55,62 @@ func detect_available() -> bool:
 	available = false
 	python_found = false
 	probe_error = ""
-	var candidates: Array = [
-		["py", PackedStringArray(["-3"])],
-		["python", PackedStringArray()],
-		["python3", PackedStringArray()],
-	]
-	for cand in candidates:
-		var exe := String(cand[0])
-		var prefix: PackedStringArray = cand[1]
-		if exe != "py":
+	for exe in ["py", "python", "python3"]:
+		var prefix: PackedStringArray = PackedStringArray(["-3"]) if exe == "py" else PackedStringArray()
+		if exe != "py" and not _python_is_real(exe):
 			# Skip the Microsoft Store alias: running it opens the Store.
-			var where_out: Array = []
-			OS.execute("where", [exe], where_out, true)
-			var first_path := String(where_out[0]).strip_edges() if where_out.size() > 0 else ""
-			if first_path.to_lower().contains("windowsapps"):
-				continue
-		var out: Array = []
-		if OS.execute(exe, prefix + PackedStringArray(["-c", "print('ok')"]), out, true) != 0:
 			continue
-		python_found = true
-		python_cmd = exe
-		python_args = prefix
-		out.clear()
-		if OS.execute(exe, prefix + PackedStringArray(["-c", "import edge_tts"]), out, true) == 0:
-			available = true
-			_last_error = ""
+		if _probe_python(exe, prefix):
 			return true
-		probe_error = String(out[0]).strip_edges() if out.size() > 0 else ""
+	# PATH may be stale right after the one-click installer; look in the
+	# standard per-user / all-user locations too.
+	for exe in _python_locations():
+		if _probe_python(exe, PackedStringArray()):
+			return true
 	if python_found:
 		_last_error = "未安装 edge-tts，请点“安装 Edge TTS”"
 	else:
 		_last_error = "未检测到 Python，请先安装 Python 或改用 Windows 系统语音"
 	return false
+
+func _python_is_real(exe: String) -> bool:
+	var out: Array = []
+	OS.execute("where", [exe], out, true)
+	var first := String(out[0]).strip_edges() if out.size() > 0 else ""
+	return first != "" and not first.to_lower().contains("windowsapps")
+
+func _probe_python(exe: String, prefix: PackedStringArray) -> bool:
+	var out: Array = []
+	if OS.execute(exe, prefix + PackedStringArray(["-c", "print('ok')"]), out, true) != 0:
+		return false
+	python_found = true
+	python_cmd = exe
+	python_args = prefix
+	out.clear()
+	if OS.execute(exe, prefix + PackedStringArray(["-c", "import edge_tts"]), out, true) == 0:
+		available = true
+		_last_error = ""
+		return true
+	probe_error = String(out[0]).strip_edges() if out.size() > 0 else ""
+	return false
+
+func _python_locations() -> Array[String]:
+	var found: Array[String] = []
+	var bases: Array[String] = []
+	var local := OS.get_environment("LOCALAPPDATA")
+	if local != "":
+		bases.append(local.path_join("Programs/Python"))
+	bases.append("C:/Program Files")
+	for base in bases:
+		if not DirAccess.dir_exists_absolute(base):
+			continue
+		for d in DirAccess.get_directories_at(base):
+			if base.ends_with("Program Files") and not String(d).begins_with("Python"):
+				continue
+			var exe := base.path_join(d).path_join("python.exe")
+			if FileAccess.file_exists(exe):
+				found.append(exe)
+	return found
 
 func speak(text: String) -> bool:
 	if not enabled:
@@ -137,10 +166,62 @@ func stop() -> void:
 		OS.kill(_active_pid)
 	_active_pid = -1
 	_busy = false
+	if _prepare_pid > 0 and OS.is_process_running(_prepare_pid):
+		OS.kill(_prepare_pid)
+	_prepare_pid = -1
+	_prepare_busy = false
 	if _player != null:
 		_player.stop()
 
+func has_cache(text: String) -> bool:
+	var clean := text.strip_edges()
+	if clean == "":
+		return false
+	var key := _key(clean)
+	return _mem.has(key) or FileAccess.file_exists(_path_for(key))
+
+func prepare(text: String) -> void:
+	# Hybrid mode: generate and cache an Edge clip silently while Windows SAPI
+	# is speaking. The clip is used the next time the same word is hovered.
+	if not enabled:
+		return
+	if checked and not available:
+		return
+	var clean := text.strip_edges()
+	if clean == "":
+		return
+	if clean.length() > MAX_TEXT:
+		clean = clean.substr(0, MAX_TEXT)
+	if has_cache(clean):
+		return
+	if _prepare_busy or _busy:
+		return
+	var key := _key(clean)
+	_prepare_key = key
+	_prepare_path = _path_for(key)
+	if FileAccess.file_exists(_prepare_path):
+		DirAccess.remove_absolute(_prepare_path)
+	var pid := _spawn(clean, _prepare_path)
+	if pid <= 0:
+		return
+	_prepare_pid = pid
+	_prepare_started = Time.get_ticks_msec()
+	_prepare_busy = true
+
 func _process(_delta: float) -> void:
+	if _prepare_busy:
+		var prepare_elapsed := Time.get_ticks_msec() - _prepare_started
+		if _prepare_pid > 0 and OS.is_process_running(_prepare_pid) and prepare_elapsed < int(timeout * 1000.0):
+			pass
+		else:
+			if _prepare_pid > 0 and OS.is_process_running(_prepare_pid):
+				OS.kill(_prepare_pid)
+			_prepare_pid = -1
+			_prepare_busy = false
+			var prepared := _load_mp3(_prepare_path)
+			if prepared != null:
+				_mem[_prepare_key] = prepared
+				_downloads += 1
 	if not _busy:
 		return
 	var elapsed := Time.get_ticks_msec() - _active_started_ms
@@ -163,18 +244,7 @@ func _start(text: String, seq: int) -> bool:
 	_active_path = _path_for(key)
 	if FileAccess.file_exists(_active_path):
 		DirAccess.remove_absolute(_active_path)
-	var args := python_args.duplicate()
-	args.append_array(PackedStringArray([
-		"-m", "edge_tts",
-		"--voice", voice_name,
-		"--text", text,
-		"--write-media", _active_path,
-	]))
-	_active_pid = OS.create_process(python_cmd, args)
-	if _active_pid <= 0 and python_cmd == "python":
-		_active_pid = OS.create_process("pythonw", args)
-	elif _active_pid <= 0 and python_cmd == "py":
-		_active_pid = OS.create_process("pyw", args)
+	_active_pid = _spawn(text, _active_path)
 	if _active_pid <= 0:
 		_busy = false
 		available = false
@@ -183,6 +253,21 @@ func _start(text: String, seq: int) -> bool:
 		return false
 	_busy = true
 	return true
+
+func _spawn(text: String, path: String) -> int:
+	var args := python_args.duplicate()
+	args.append_array(PackedStringArray([
+		"-m", "edge_tts",
+		"--voice", voice_name,
+		"--text", text,
+		"--write-media", path,
+	]))
+	var pid := OS.create_process(python_cmd, args)
+	if pid <= 0 and python_cmd == "python":
+		pid = OS.create_process("pythonw", args)
+	elif pid <= 0 and python_cmd == "py":
+		pid = OS.create_process("pyw", args)
+	return pid
 
 func _finish_process() -> void:
 	var seq := _active_seq

@@ -44,6 +44,7 @@ addons/hover_translator/
 | `rate` | `0` | 语速，-10 ~ 10 |
 | `volume` | `100` | 音量，0 ~ 100 |
 | `voice` | `Microsoft Zira Desktop` | Windows 英文语音名 |
+| `voice_mode` | `1` | 0=纯 Edge，1=先 Windows 再 Edge，2=只 Windows |
 | `online_fallback` | `true` | 本地词典没命中时联网翻译 |
 | `online_voice` | `true` | 使用外部 Edge 在线语音 |
 | `auto_apply_review` | `true` | 审核文件出现 `approved` 时自动导入词库 |
@@ -144,21 +145,34 @@ AI 审核时修改 `online_review.json` 里的 `zh`，把 `bucket` 改成：
 - 黄色：Edge 不可用，自动改用 Windows 系统语音
 - 红色：两者都不可用
 
-红色时点面板里的 **安装 Edge TTS**（需要 Python）或 **下载 Python**。安装 Python 时勾选 **Add python.exe to PATH**；装完 Python 后先重启编辑器，再点 **重新检测语音**。安装完 edge-tts 后也点一下 **重新检测语音**。
+红色时点面板里的 **安装语音环境**：插件会自动用 winget 或国内镜像安装 Python，再安装 edge-tts；装完会提示，并自动重新检测。也可以手动点 **重新检测语音**。
 
 没有 edge-tts 时插件会自动使用 Windows 英文语音，所以大多数情况下不装 Python 也能出声。
+
+### 语音模式
+
+面板里的“语音模式”有三项：
+
+| 模式 | 行为 |
+|---|---|
+| 纯 Edge TTS | 只用 Edge，音质最好；第一次生成稍慢，之后走缓存 |
+| 先 Windows 再 Edge（默认） | 没缓存时先用 Windows 立即出声，同时后台生成 Edge；下次同一个词改用 Edge |
+| 只 Windows | 只用系统语音，实时、**不生成任何 MP3 文件**；音质一般，适合快速查自定义 API |
+
+“只 Windows”完全不会调用 Python，也不会写音频缓存。
 
 ## 音频实现
 
 优先使用外部 **Edge TTS**：插件调用 `python -m edge_tts` 生成 MP3，默认音色 `en-US-GuyNeural`（统一男声），再用 Godot 的 `AudioStreamPlayer` 播放。这样不经过 SAPI，也不调用会崩溃的 `DisplayServer.tts_*`。
 
-- 第一次划到某个词：后台生成 MP3，通常约 1 秒；
+- 纯 Edge 模式：第一次划到某个词时后台生成 MP3（约 1 秒），之后走缓存；
+- 先 Windows 再 Edge 模式：第一次先用系统语音立即出声，同时在后台生成 MP3，下次同一个词改用 Edge；
+- 只 Windows 模式：不生成 MP3，实时出声；
 - 播放后缓存到：
   `%USERPROFILE%\AppData\LocalLow\HoverTranslator\tts_edge\<hash>.mp3`
 - 第二次划到同一个词：直接读本地 MP3，零生成延迟；
-- 推荐安装 Python 和 `edge-tts`：
+- 推荐安装 Python 和 `edge-tts`（面板 **安装语音环境** 可一键完成，也可以用命令）：
   `python -m pip install --user edge-tts`
-  （也可以直接在“划词翻译”面板点 **安装 Edge TTS**）
 - 如果想换音色，改 `online_voice_name`，例如 `en-US-AriaNeural`（女声）、`en-GB-RyanNeural`（英式男声）。
 
 Edge 不可用时，插件会自动改用 SAPI，并自动选一个可用的英文声音（配置的语音不存在也能用）。两者都不可用时，面板会显示红色提示和安装按钮。
