@@ -45,10 +45,18 @@ func find(mouse_pos: Vector2) -> Dictionary:
 
 func _clean_target(target: Dictionary) -> Dictionary:
 	var t := _clean_target_text(String(target.get("text", "")))
-	if t == "":
+	if t == "" or t.length() > 80 or t.contains("\n"):
 		return {}
 	target["text"] = t
 	return target
+
+func _is_own_ui(c: Control) -> bool:
+	var n: Node = c
+	while n != null:
+		if n.has_meta("hover_translator_ui"):
+			return true
+		n = n.get_parent()
+	return false
 
 func _clean_target_text(t: String) -> String:
 	var s := t.strip_edges()
@@ -135,6 +143,8 @@ func _popup_target(pop: PopupMenu, mouse_pos: Vector2) -> Dictionary:
 	return {}
 
 func _from_control(c: Control, mouse_pos: Vector2) -> Dictionary:
+	if _is_own_ui(c):
+		return {}
 	if c is TextEdit:
 		return _code_target(c as TextEdit, mouse_pos)
 	if c is Tree:
@@ -188,7 +198,10 @@ func _direct_text(c: Control) -> String:
 	if c is Label:
 		t = (c as Label).text
 	elif c is RichTextLabel:
-		t = (c as RichTextLabel).get_parsed_text()
+		# Never take the whole paragraph: the Output panel and help panels are
+		# RichTextLabels, and hovering them used to dump entire logs into the
+		# history. Single controls are handled by _child_text_at instead.
+		t = ""
 	elif c is Button:
 		t = (c as Button).text
 	elif c is LineEdit:

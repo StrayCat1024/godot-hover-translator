@@ -359,6 +359,7 @@ func _add_string(key: String, value: String, label: String) -> void:
 func _build_dock() -> void:
 	_dock = VBoxContainer.new()
 	_dock.name = "HoverTranslatorPanel"
+	_dock.set_meta("hover_translator_ui", true)
 	_dock.add_theme_constant_override("separation", 6)
 
 	var margin := MarginContainer.new()
@@ -502,6 +503,11 @@ func _build_dock() -> void:
 	open_dict_btn.text = "打开词库目录"
 	open_dict_btn.pressed.connect(_on_open_dicts)
 	row3.add_child(open_dict_btn)
+
+	var clear_history_btn := Button.new()
+	clear_history_btn.text = "清空历史"
+	clear_history_btn.pressed.connect(_on_clear_history)
+	row3.add_child(clear_history_btn)
 
 	var import_review_btn := Button.new()
 	import_review_btn.text = "导入审核结果"
@@ -684,6 +690,8 @@ func _add_history(result: Dictionary) -> void:
 	var zh := String(result.get("zh", ""))
 	if q == "" or _history == null:
 		return
+	if q.length() > 80 or q.contains("\n") or q.begins_with("当前：") or q.begins_with("最近查过"):
+		return
 	if _history_words.size() > 0 and _history_words[_history_words.size() - 1] == q:
 		_update_history_result(result)
 		return
@@ -722,6 +730,12 @@ func _on_history_selected(index: int) -> void:
 		_last_query = String(result.get("query", q))
 		_last_kind = kind
 		online.request(q, kind, String(result.get("query", q)))
+
+func _on_clear_history() -> void:
+	_history_words.clear()
+	_history_zh.clear()
+	if _history != null:
+		_history.clear()
 
 func _input(event: InputEvent) -> void:
 	# Shift-hover is a quick way to repeat the pronunciation without moving away.
