@@ -41,3 +41,5 @@ addons/hover_translator/AI_CLASSIFICATION.md
 %USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
 %USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
 ```
+
+最后如果喜欢的话就点个⭐吧   ❤️❤️❤️
