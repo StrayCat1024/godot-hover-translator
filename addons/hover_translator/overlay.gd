@@ -240,7 +240,7 @@ func _layout(mouse_pos: Vector2) -> void:
 		# The card shares the popup's near horizontal edge (left edge on the
 		# right side, right edge on the left side) and sits just past the
 		# popup's near vertical edge, so the two rectangles line up.
-		var tip := _primary_tooltip()
+		var tip := _primary_tooltip(mouse_pos)
 		var side_gap := 8.0
 		var center := tip.get_center()
 		var on_right := center.x >= mouse_pos.x
@@ -308,12 +308,22 @@ func _layout(mouse_pos: Vector2) -> void:
 	accent.size = Vector2(3, h - 14)
 	accent.visible = true
 
-func _primary_tooltip() -> Rect2:
+func _primary_tooltip(mouse_pos: Vector2) -> Rect2:
 	var best := _avoid_rects[0]
+	var best_dist := _rect_distance(best, mouse_pos)
 	for r in _avoid_rects:
-		if r.get_area() > best.get_area():
+		var dist := _rect_distance(r, mouse_pos)
+		if dist < best_dist:
 			best = r
+			best_dist = dist
 	return best
+
+func _rect_distance(r: Rect2, p: Vector2) -> float:
+	var q := Vector2(
+		clampf(p.x, r.position.x, r.position.x + r.size.x),
+		clampf(p.y, r.position.y, r.position.y + r.size.y)
+	)
+	return q.distance_to(p)
 
 func _overlap_area(r: Rect2) -> float:
 	var total := 0.0

@@ -31,7 +31,7 @@ func find(mouse_pos: Vector2) -> Dictionary:
 		if w is PopupMenu:
 			var pop := _popup_target(w as PopupMenu, mouse_pos)
 			if not pop.is_empty():
-				return pop
+				return _clean_target(pop)
 		if _is_tooltip_window(w):
 			# Keep the native tooltip visible, but do not let it steal the
 			# hover target from the editor control underneath.
@@ -40,8 +40,28 @@ func find(mouse_pos: Vector2) -> Dictionary:
 		if c and c.is_visible_in_tree():
 			var target := _from_control(c, mouse_pos)
 			if not target.is_empty():
-				return target
+				return _clean_target(target)
 	return {}
+
+func _clean_target(target: Dictionary) -> Dictionary:
+	var t := _clean_target_text(String(target.get("text", "")))
+	if t == "":
+		return {}
+	target["text"] = t
+	return target
+
+func _clean_target_text(t: String) -> String:
+	var s := t.strip_edges()
+	if not s.contains("|"):
+		return s
+	# The native help popup builds its title as "class|Node|"; never feed
+	# those internal separators to the dictionary/online translation.
+	var parts := s.split("|", false)
+	for i in range(parts.size() - 1, -1, -1):
+		var part := String(parts[i]).strip_edges()
+		if part != "" and _has_letters(part):
+			return part
+	return s
 
 func native_tooltip_rects(mouse_pos: Vector2) -> Array[Rect2]:
 	var out: Array[Rect2] = []
@@ -52,14 +72,35 @@ func native_tooltip_rects(mouse_pos: Vector2) -> Array[Rect2]:
 			continue
 		if not _is_tooltip_window(w):
 			continue
-		var r := Rect2(Vector2(w.position), Vector2(w.size))
-		if w.get_class() == "EditorHelpBitTooltip" or r.grow(120.0).has_point(mouse_pos):
+		var r := _window_rect(w, mouse_pos)
+		if _is_help_window(w) or _rect_distance(r, mouse_pos) <= 240.0:
 			out.append(r)
 	return out
+
+func _window_rect(w: Window, mouse_pos: Vector2) -> Rect2:
+	# Embedded subwindows use parent-relative coordinates, native popups use
+	# screen coordinates. Pick whichever rectangle sits next to the pointer.
+	var r := Rect2(Vector2(w.position), Vector2(w.size))
+	var screen_pos := Vector2(DisplayServer.window_get_position())
+	var alt := Rect2(Vector2(w.position) - screen_pos, Vector2(w.size))
+	return alt if _rect_distance(alt, mouse_pos) < _rect_distance(r, mouse_pos) else r
+
+func _rect_distance(r: Rect2, p: Vector2) -> float:
+	var q := Vector2(
+		clampf(p.x, r.position.x, r.position.x + r.size.x),
+		clampf(p.y, r.position.y, r.position.y + r.size.y)
+	)
+	return q.distance_to(p)
+
+func _is_help_window(w: Window) -> bool:
+	var cn := w.get_class()
+	return cn == "EditorHelpBitTooltip" or cn.contains("Tooltip") or cn.contains("HelpBit")
 
 func _is_tooltip_window(w: Window) -> bool:
 	if w is PopupMenu or w is AcceptDialog or w is ConfirmationDialog or w is FileDialog:
 		return false
+	if _is_help_window(w):
+		return true
 	if w is PopupPanel:
 		return true
 	if w.borderless and w.size.x > 0 and w.size.y > 0 and w.size.x <= 1400.0 and w.size.y <= 1000.0:
