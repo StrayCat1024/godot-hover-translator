@@ -4,6 +4,17 @@
 
 不修改引擎源码，不依赖原生 tooltip 的延迟，也不会去翻译游戏运行时或 Debugger 的输出。
 
+## 平台支持
+
+| 平台 | 支持情况 | 朗读后端 |
+|---|---|---|
+| Windows | 完整支持 | Windows 系统语音（SAPI）+ 可选 Edge TTS |
+| macOS | 支持 | macOS 原生 `say` + 可选 Edge TTS |
+| Linux | 支持 | speech-dispatcher（`spd-say`）或 espeak-ng / espeak + 可选 Edge TTS |
+| Android / iOS / Web | **不支持** | 插件启用时会自动拦截并提示，不会加载面板 |
+
+macOS / Linux 默认使用系统原生语音，不需要安装 Python，也不会生成音频文件；想要更好的音色时，可以在面板里切换到 Edge TTS。
+
 ## 覆盖范围
 
 - 检查器：`Transform`、`Visibility`、`Texture`、`Material`、`Physics Interpolation` 等分区和属性行
@@ -43,8 +54,8 @@ addons/hover_translator/
 | `follow_native_tooltip` | `true` | 有原生提示时卡片贴到提示旁边；关闭则始终跟着鼠标 |
 | `rate` | `0` | 语速，-10 ~ 10 |
 | `volume` | `100` | 音量，0 ~ 100 |
-| `voice` | `Microsoft Zira Desktop` | Windows 英文语音名 |
-| `voice_mode` | `1` | 0=纯 Edge，1=先 Windows 再 Edge，2=只 Windows |
+| `voice` | 见下 | 系统语音名，留空 = 自动选英文语音 |
+| `voice_mode` | Windows `1`，macOS/Linux `2` | 0=纯 Edge，1=先系统再 Edge，2=只系统 |
 | `online_fallback` | `true` | 本地词典没命中时联网翻译 |
 | `online_voice` | `true` | 使用外部 Edge 在线语音 |
 | `auto_apply_review` | `true` | 审核文件出现 `approved` 时自动导入词库 |
@@ -99,12 +110,13 @@ review/
 
 插件目录里的 `data/` 只是**首次启动的种子**；运行时真正读写的是：
 
-```text
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
-```
+| 平台 | 词库 / 审核文件 |
+|---|---|
+| Windows | `%USERPROFILE%\AppData\LocalLow\HoverTranslator\` |
+| macOS | `~/Library/Application Support/HoverTranslator/` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/HoverTranslator/` |
 
-这样做是因为 Godot 可能以低权限/沙箱进程运行，写不了项目目录。面板里的 **“打开词库目录”**、**“打开审核文件”** 会直接打开真实路径。
+Windows 放在 LocalLow 是因为 Godot 可能以低权限/沙箱进程运行，写不了项目目录；macOS / Linux 用标准用户数据目录。面板里的 **“打开词库目录”**、**“打开审核文件”** 会直接打开真实路径。
 
 查询顺序：
 
@@ -134,52 +146,68 @@ AI 审核时修改 `online_review.json` 里的 `zh`，把 `bucket` 改成：
 
 ## 语音检测与安装
 
-插件启动时会自动检测语音后端：
+插件启动时会自动检测当前系统和语音后端：
 
-- Edge TTS：Python + `edge-tts`
-- Windows 系统语音（SAPI）
+- **Windows**：Windows 系统语音（SAPI）+ Edge TTS（Python + `edge-tts`）
+- **macOS**：原生 `say` 命令 + Edge TTS（`edge-tts` 命令或 `python3 -m edge_tts`）
+- **Linux**：`spd-say`（speech-dispatcher）或 `espeak-ng` / `espeak` + Edge TTS
 
 检测结果显示在底部 **“划词翻译”** 面板：
 
 - 绿色：Edge 在线语音可用
-- 黄色：Edge 不可用，自动改用 Windows 系统语音
+- 黄色：Edge 不可用，自动改用当前系统的原生语音
 - 红色：两者都不可用
 
-红色时点面板里的 **安装语音环境**：插件会自动用 winget 或国内镜像安装 Python，再安装 edge-tts；装完会提示，并自动重新检测。也可以手动点 **重新检测语音**。
+红色时的安装方式按平台不同：
 
-没有 edge-tts 时插件会自动使用 Windows 英文语音，所以大多数情况下不装 Python 也能出声。
+- **Windows**：点面板里的 **安装语音环境**，插件会自动用 winget 或国内镜像安装 Python，再安装 edge-tts；装完会提示，并自动重新检测。
+- **macOS / Linux**：系统语音通常已经可用，不需要装 Python。想要 Edge 音色时，点 **复制 Edge TTS 安装命令**，在终端运行：
+  `python3 -m pip install --user edge-tts`
+  如果 Homebrew 的 Python 提示 `externally-managed-environment`，改用 `pipx install edge-tts` 即可。
+
+也可以随时手动点 **重新检测语音**。
+
+没有 edge-tts 时插件会自动使用当前系统的原生语音，所以大多数情况下不装 Python 也能出声。
 
 ### 语音模式
 
-面板里的“语音模式”有三项：
+面板里的“语音模式”有三项（macOS / Linux 上文字会显示成对应的系统名）：
 
 | 模式 | 行为 |
 |---|---|
 | 纯 Edge TTS | 只用 Edge，音质最好；第一次生成稍慢，之后走缓存 |
-| 先 Windows 再 Edge（默认） | 没缓存时先用 Windows 立即出声，同时后台生成 Edge；下次同一个词改用 Edge |
-| 只 Windows | 只用系统语音，实时、**不生成任何 MP3 文件**；音质一般，适合快速查自定义 API |
+| 先系统再 Edge（Windows 默认） | 没缓存时先用系统语音立即出声，同时后台生成 Edge；下次同一个词改用 Edge |
+| 只系统（macOS / Linux 默认） | 只用系统语音，实时、**不生成任何 MP3 文件**；音质一般，适合快速查自定义 API |
 
-“只 Windows”完全不会调用 Python，也不会写音频缓存。
+“只系统”完全不会调用 Python，也不会写音频缓存。macOS / Linux 首次启用时会自动选这一项。
 
 ## 音频实现
 
-优先使用外部 **Edge TTS**：插件调用 `python -m edge_tts` 生成 MP3，默认音色 `en-US-GuyNeural`（统一男声），再用 Godot 的 `AudioStreamPlayer` 播放。这样不经过 SAPI，也不调用会崩溃的 `DisplayServer.tts_*`。
+优先使用外部 **Edge TTS**：插件调用 `edge-tts` 或 `python -m edge_tts` 生成 MP3，默认音色 `en-US-GuyNeural`（统一男声），再用 Godot 的 `AudioStreamPlayer` 播放。这样不经过 SAPI，也不调用会崩溃的 `DisplayServer.tts_*`。
 
 - 纯 Edge 模式：第一次划到某个词时后台生成 MP3（约 1 秒），之后走缓存；
-- 先 Windows 再 Edge 模式：第一次先用系统语音立即出声，同时在后台生成 MP3，下次同一个词改用 Edge；
-- 只 Windows 模式：不生成 MP3，实时出声；
+- 先系统再 Edge 模式：第一次先用系统语音立即出声，同时在后台生成 MP3，下次同一个词改用 Edge；
+- 只系统模式：不生成 MP3，实时出声；
 - 播放后缓存到：
-  `%USERPROFILE%\AppData\LocalLow\HoverTranslator\tts_edge\<hash>.mp3`
+  - Windows：`%USERPROFILE%\AppData\LocalLow\HoverTranslator\tts_edge\<hash>.mp3`
+  - macOS：`~/Library/Caches/HoverTranslator/tts_edge/<hash>.mp3`
+  - Linux：`${XDG_CACHE_HOME:-~/.cache}/HoverTranslator/tts_edge/<hash>.mp3`
 - 第二次划到同一个词：直接读本地 MP3，零生成延迟；
-- 推荐安装 Python 和 `edge-tts`（面板 **安装语音环境** 可一键完成，也可以用命令）：
-  `python -m pip install --user edge-tts`
+- 推荐安装 Python 和 `edge-tts`（Windows 面板 **安装语音环境** 可一键完成；macOS/Linux 在终端运行）：
+  `python3 -m pip install --user edge-tts`
 - 如果想换音色，改 `online_voice_name`，例如 `en-US-AriaNeural`（女声）、`en-GB-RyanNeural`（英式男声）。
 
-Edge 不可用时，插件会自动改用 SAPI，并自动选一个可用的英文声音（配置的语音不存在也能用）。两者都不可用时，面板会显示红色提示和安装按钮。
+Edge 不可用时，插件会自动改用当前系统的原生语音：
 
-如果 Godot 在 **低完整性 / 沙箱进程** 中启动，Windows 会拒绝 SAPI 访问（日志里是“没有当前安全设置可用的语音”或 `Access denied`），这时保持 `online_voice = true` 即可。
+- Windows：SAPI，自动选一个可用的英文声音（配置的语音不存在也能用）；
+- macOS：`say`，优先 `Samantha` / `Alex` 等英文声音，也可以自己填语音名；
+- Linux：`spd-say` → `espeak-ng` → `espeak` 依次尝试。
 
-语音日志（SAPI 路径）：
+两者都不可用时，面板会显示红色提示和安装按钮。
+
+Windows 下如果 Godot 在 **低完整性 / 沙箱进程** 中启动，系统会拒绝 SAPI 访问（日志里是“没有当前安全设置可用的语音”或 `Access denied`），这时保持 `online_voice = true` 即可。
+
+Windows 语音日志（SAPI 路径）：
 
 ```text
 %APPDATA%\Godot\app_userdata\<项目名>\hover_translator_tts.log

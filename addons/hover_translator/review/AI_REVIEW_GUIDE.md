@@ -60,8 +60,9 @@ grammar
 ## 真实文件位置
 
 ```text
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
+Windows: %USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
+macOS:   ~/Library/Application Support/HoverTranslator/review/online_review.json
+Linux:   ${XDG_DATA_HOME:-~/.local/share}/HoverTranslator/review/online_review.json
 ```
 
 插件目录里的 `data/` 只是种子，不要改错。

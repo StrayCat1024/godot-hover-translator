@@ -33,13 +33,35 @@ var _cache_hits := 0
 
 func _ready() -> void:
 	set_process(true)
-	_cache_path = OS.get_environment("USERPROFILE").path_join("AppData/LocalLow").path_join(CACHE_DIR_NAME).path_join("translation_cache.json")
+	_cache_path = _platform_cache_path()
 	DirAccess.make_dir_recursive_absolute(_cache_path.get_base_dir())
 	_http = HTTPRequest.new()
 	_http.timeout = timeout
 	add_child(_http)
 	_http.request_completed.connect(_on_request_completed)
 	_load_cache()
+
+func _platform_cache_path() -> String:
+	var home := OS.get_environment("HOME")
+	var root := ""
+	match OS.get_name():
+		"Windows":
+			var profile := OS.get_environment("USERPROFILE")
+			if profile == "":
+				profile = home
+			root = profile.path_join("AppData/LocalLow").path_join(CACHE_DIR_NAME)
+		"macOS":
+			if home != "":
+				root = home.path_join("Library/Application Support").path_join(CACHE_DIR_NAME)
+		"Linux":
+			if home != "":
+				var data_home := OS.get_environment("XDG_DATA_HOME")
+				if data_home == "":
+					data_home = home.path_join(".local/share")
+				root = data_home.path_join(CACHE_DIR_NAME)
+	if root == "":
+		root = OS.get_user_data_dir().path_join(CACHE_DIR_NAME)
+	return root.path_join("translation_cache.json")
 
 func _process(delta: float) -> void:
 	if _dirty:

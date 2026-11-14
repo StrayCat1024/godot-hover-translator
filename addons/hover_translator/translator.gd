@@ -65,11 +65,30 @@ func _init() -> void:
 	_alpha_digit.compile("([A-Za-z])([0-9])")
 	_file_ext.compile("\\.([A-Za-z0-9]+)$")
 	_tags.compile("<[^>]+>")
-	_live_root = OS.get_environment("USERPROFILE").path_join("AppData/LocalLow").path_join(LIVE_ROOT_NAME)
+	_live_root = _platform_live_root()
 	_data_dir = _live_root.path_join("data")
 	_review_path = _live_root.path_join("review").path_join(REVIEW_FILE)
 	_ensure_live_data()
 	reload()
+
+func _platform_live_root() -> String:
+	var home := OS.get_environment("HOME")
+	match OS.get_name():
+		"Windows":
+			var profile := OS.get_environment("USERPROFILE")
+			if profile == "":
+				profile = home
+			return profile.path_join("AppData/LocalLow").path_join(LIVE_ROOT_NAME)
+		"macOS":
+			if home != "":
+				return home.path_join("Library/Application Support").path_join(LIVE_ROOT_NAME)
+		"Linux":
+			if home != "":
+				var data_home := OS.get_environment("XDG_DATA_HOME")
+				if data_home == "":
+					data_home = home.path_join(".local/share")
+				return data_home.path_join(LIVE_ROOT_NAME)
+	return OS.get_user_data_dir().path_join(LIVE_ROOT_NAME)
 
 func _ensure_live_data() -> void:
 	DirAccess.make_dir_recursive_absolute(_data_dir)

@@ -4,7 +4,8 @@ extends EditorPlugin
 ##
 ## Hover any English word or UI label: a separate card appears immediately
 ## (the native tooltip is never modified), showing a Chinese translation, and
-## the English text is spoken through a persistent Windows SAPI helper.
+## the English text is spoken through the platform voice backend:
+## Windows SAPI, macOS `say`, or Linux speech-dispatcher / espeak.
 
 const TranslatorScript = preload("res://addons/hover_translator/translator.gd")
 const ProbeScript = preload("res://addons/hover_translator/probe.gd")
@@ -12,6 +13,8 @@ const OverlayScript = preload("res://addons/hover_translator/overlay.gd")
 const TTSScript = preload("res://addons/hover_translator/tts.gd")
 const OnlineScript = preload("res://addons/hover_translator/online.gd")
 const VoiceScript = preload("res://addons/hover_translator/voice.gd")
+
+const SUPPORTED_PLATFORMS := ["Windows", "macOS", "Linux"]
 
 var translator: RefCounted
 var probe: RefCounted
@@ -61,7 +64,10 @@ var _review_watch := 0.0
 var _review_mtime := -1
 
 func _enter_tree() -> void:
-	print("[HoverTranslator] loaded")
+	print("[HoverTranslator] loaded on ", OS.get_name())
+	if not _platform_supported():
+		_block_platform()
+		return
 	_define_settings()
 	translator = TranslatorScript.new()
 	base = EditorInterface.get_base_control()
@@ -114,6 +120,62 @@ func _exit_tree() -> void:
 		overlay = null
 	probe = null
 	translator = null
+
+func _platform_supported() -> bool:
+	return OS.get_name() in SUPPORTED_PLATFORMS
+
+func _block_platform() -> void:
+	set_process(false)
+	var os_name := OS.get_name()
+	print("[HoverTranslator] unsupported platform: ", os_name)
+	_toast("悬停翻译只支持 Windows / macOS / Linux 桌面版 Godot，当前平台 %s 已自动停用。" % os_name, 2)
+	var dialog := AcceptDialog.new()
+	dialog.title = "Hover Translator"
+	dialog.dialog_text = "这个插件只支持 Windows / macOS / Linux 的 Godot 桌面编辑器。\n\n当前平台：%s\n\n手机和网页版编辑器没有鼠标悬停和系统语音接口，插件已自动停用。" % os_name
+	dialog.ok_button_text = "知道了"
+	var host := EditorInterface.get_base_control()
+	if host != null:
+		host.add_child(dialog)
+		dialog.popup_centered()
+		dialog.confirmed.connect(dialog.queue_free)
+		dialog.canceled.connect(dialog.queue_free)
+	else:
+		dialog.queue_free()
+
+func _is_windows() -> bool:
+	return OS.get_name() == "Windows"
+
+func _system_voice_short() -> String:
+	match OS.get_name():
+		"Windows":
+			return "Windows"
+		"macOS":
+			return "macOS"
+		"Linux":
+			return "Linux"
+	return "系统"
+
+func _system_voice_name() -> String:
+	return _system_voice_short() + " 系统语音"
+
+func _default_system_voice() -> String:
+	match OS.get_name():
+		"Windows":
+			return "Microsoft Zira Desktop"
+		"macOS":
+			return "Samantha"
+		"Linux":
+			return "en"
+	return ""
+
+func _default_voice_mode() -> int:
+	# macOS / Linux always have a usable native voice, so start with that and
+	# only use Edge when the user explicitly chooses it. Windows keeps the
+	# hybrid default (instant SAPI + silent Edge generation).
+	return 1 if _is_windows() else 2
+
+func _install_command_text() -> String:
+	return "python3 -m pip install --user edge-tts"
 
 func _process(delta: float) -> void:
 	if overlay == null or not is_instance_valid(overlay):
@@ -311,7 +373,7 @@ func _configure_voice() -> void:
 	voice.volume_db = linear_to_db(float(vol) / 100.0)
 
 func _voice_mode() -> int:
-	return clampi(int(ProjectSettings.get_setting("hover_translator/voice_mode", 1)), 0, 2)
+	return clampi(int(ProjectSettings.get_setting("hover_translator/voice_mode", _default_voice_mode())), 0, 2)
 
 func _speak_english(text: String) -> bool:
 	var say := text.strip_edges()
@@ -320,7 +382,7 @@ func _speak_english(text: String) -> bool:
 	var mode := _voice_mode()
 	var edge_on := voice != null and bool(voice.enabled)
 	if mode == 2:
-		# Windows only: instant, and no MP3 file is ever generated.
+		# System only: instant, and no MP3 file is ever generated.
 		return tts != null and bool(tts.speak(say))
 	if mode == 1 and edge_on:
 		if voice.has_cache(say):
@@ -328,10 +390,10 @@ func _speak_english(text: String) -> bool:
 				return true
 		else:
 			if tts != null and bool(tts.speak(say)):
-				# Windows speaks now; Edge is generated silently for next time.
+				# System voice speaks now; Edge is generated silently for next time.
 				voice.prepare(say)
 				return true
-			# SAPI unavailable: fall through and wait for Edge.
+			# System voice unavailable: fall through and wait for Edge.
 	if edge_on:
 		if bool(voice.speak(say)):
 			return true
@@ -343,14 +405,15 @@ func _speak_english(text: String) -> bool:
 func _refresh_status() -> void:
 	_update_voice_health()
 	if _status != null:
+		var sys_name := _system_voice_name()
 		if voice != null and bool(voice.enabled):
 			if voice.available:
 				if _voice_mode() == 1:
-					_status.text = "朗读：先 Windows 再 Edge（Edge 可用）"
+					_status.text = "朗读：先 %s 再 Edge（Edge 可用）" % _system_voice_short()
 				else:
 					_status.text = "朗读：Edge 在线语音（可用）"
 			elif tts != null and tts.is_ready():
-				_status.text = "朗读：Windows 系统语音（Edge 未安装，已自动改用系统语音）"
+				_status.text = "朗读：%s（Edge 未安装，已自动改用系统语音）" % sys_name
 			elif voice.checked:
 				_status.text = "朗读：语音不可用（见下方提示）"
 			else:
@@ -374,10 +437,10 @@ func _define_settings() -> void:
 	_add_int_range("hover_translator/rate", 0, -10, 10, "语音语速（-10 到 10）")
 	_add_int_range("hover_translator/volume", 100, 0, 100, "语音音量（0 到 100）")
 	_add_int_range("hover_translator/online_timeout", 8, 3, 30, "在线翻译超时（秒）")
-	_add_string("hover_translator/voice", "Microsoft Zira Desktop", "英文语音名称")
+	_add_string("hover_translator/voice", _default_system_voice(), "系统语音名称（留空 = 自动选择英文语音）")
 	_add_string("hover_translator/online_url", "https://api.mymemory.translated.net/get?q={query}&langpair=en%7Czh-CN", "在线翻译接口模板（{query} 为英文）")
 	_add_string("hover_translator/online_voice_name", "en-US-GuyNeural", "Edge 在线语音名称（男声 en-US-GuyNeural）")
-	_add_int_range("hover_translator/voice_mode", 1, 0, 2, "语音模式：0=纯 Edge，1=先 Windows 再 Edge，2=只 Windows")
+	_add_int_range("hover_translator/voice_mode", _default_voice_mode(), 0, 2, "语音模式：0=纯 Edge，1=先系统再 Edge，2=只系统")
 
 func _add_bool(key: String, value: bool, label: String) -> void:
 	if not ProjectSettings.has_setting(key):
@@ -460,14 +523,14 @@ func _build_dock() -> void:
 
 	_voice_mode_option = OptionButton.new()
 	_voice_mode_option.add_item("纯 Edge TTS（好听，首次稍慢）", 0)
-	_voice_mode_option.add_item("先 Windows 再 Edge（推荐）", 1)
-	_voice_mode_option.add_item("只 Windows（最快，不生成文件）", 2)
+	_voice_mode_option.add_item("先 %s 再 Edge（推荐）" % _system_voice_short(), 1)
+	_voice_mode_option.add_item("只 %s（最快，不生成文件）" % _system_voice_short(), 2)
 	_voice_mode_option.selected = _voice_mode()
 	_voice_mode_option.item_selected.connect(_on_voice_mode_changed)
 	mode_row.add_child(_voice_mode_option)
 
 	var mode_hint := Label.new()
-	mode_hint.text = "先 Windows：第一次先用系统语音，后台生成 Edge，下次用 Edge"
+	mode_hint.text = "先系统：第一次先用系统语音，后台生成 Edge，下次用 Edge"
 	mode_hint.add_theme_font_size_override("font_size", 10)
 	mode_hint.add_theme_color_override("font_color", Color(0.55, 0.68, 0.72))
 	mode_row.add_child(mode_hint)
@@ -528,13 +591,13 @@ func _build_dock() -> void:
 	row2.add_child(_rate_spin)
 
 	var voice_label := Label.new()
-	voice_label.text = "英文语音"
+	voice_label.text = "语音名称"
 	row2.add_child(voice_label)
 
 	_voice_edit = LineEdit.new()
-	_voice_edit.text = String(ProjectSettings.get_setting("hover_translator/voice", "Microsoft Zira Desktop"))
+	_voice_edit.text = String(ProjectSettings.get_setting("hover_translator/voice", _default_system_voice()))
 	_voice_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_voice_edit.placeholder_text = "例如 Microsoft Zira Desktop"
+	_voice_edit.placeholder_text = "留空 = 自动选择系统英文语音"
 	row2.add_child(_voice_edit)
 
 	var apply_voice := Button.new()
@@ -586,7 +649,7 @@ func _build_dock() -> void:
 	root.add_child(row4)
 
 	_install_voice_btn = Button.new()
-	_install_voice_btn.text = "安装 Edge TTS"
+	_install_voice_btn.text = "安装 Edge TTS" if _is_windows() else "复制 Edge TTS 安装命令"
 	_install_voice_btn.pressed.connect(_on_install_voice)
 	row4.add_child(_install_voice_btn)
 
@@ -664,13 +727,13 @@ func _detect_voice() -> void:
 	if voice != null and bool(voice.enabled):
 		edge_ok = voice.detect_available()
 	if mode != 0 and tts != null and not tts.started:
-		# Hybrid and Windows-only need SAPI ready for the first word.
+		# Hybrid and system-only need the native voice ready for the first word.
 		tts.start()
 	if not edge_ok and tts != null and not tts.is_ready() and not tts.started:
 		tts.restart()
 	_refresh_status()
 	if not edge_ok:
-		# SAPI needs a moment to start; only warn after it had a chance.
+		# The native voice needs a moment to start; only warn after it had a chance.
 		await get_tree().create_timer(2.5).timeout
 		if not is_inside_tree():
 			return
@@ -685,24 +748,28 @@ func _update_voice_health() -> void:
 		return
 	var edge_on: bool = voice != null and bool(voice.enabled)
 	var edge_ok: bool = edge_on and bool(voice.available)
-	var sapi_ok: bool = tts != null and bool(tts.is_ready())
+	var sys_ok: bool = tts != null and bool(tts.is_ready())
+	var sys_name := _system_voice_name()
 	if edge_ok:
 		_voice_health.text = "语音：Edge 在线语音可用"
 		_voice_health.add_theme_color_override("font_color", Color(0.55, 0.85, 0.65))
-	elif sapi_ok:
-		_voice_health.text = "语音：Windows 系统语音可用（%s）" % tts.current_voice()
+	elif sys_ok:
+		_voice_health.text = "语音：%s可用（%s）" % [sys_name, tts.current_voice()]
 		_voice_health.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45))
 	elif edge_on and not voice.checked:
 		_voice_health.text = "语音：正在检测…"
 		_voice_health.add_theme_color_override("font_color", Color(0.65, 0.72, 0.82))
 	elif not edge_on:
-		_voice_health.text = "语音：在线语音已关闭，系统语音不可用"
+		_voice_health.text = "语音：在线语音已关闭，%s不可用" % sys_name
 		_voice_health.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
 	else:
-		if voice != null and not voice.python_found:
-			_voice_health.text = "语音：不可用。点“安装语音环境”自动安装 Python + Edge TTS。"
+		if _is_windows():
+			if voice != null and not voice.python_found:
+				_voice_health.text = "语音：不可用。点“安装语音环境”自动安装 Python + Edge TTS。"
+			else:
+				_voice_health.text = "语音：不可用。请安装 Edge TTS（推荐）或 Windows 英文语音。"
 		else:
-			_voice_health.text = "语音：不可用。请安装 Edge TTS（推荐）或 Windows 英文语音。"
+			_voice_health.text = "语音：不可用。%s不可用，请安装 edge-tts：%s" % [sys_name, _install_command_text()]
 		_voice_health.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
 	if _install_voice_btn != null:
 		if _install_active:
@@ -710,13 +777,21 @@ func _update_voice_health() -> void:
 			_install_voice_btn.disabled = true
 		else:
 			_install_voice_btn.disabled = false
-			if voice != null and voice.checked and not voice.python_found:
+			if not _is_windows():
+				_install_voice_btn.text = "复制 Edge TTS 安装命令"
+			elif voice != null and voice.checked and not voice.python_found:
 				_install_voice_btn.text = "安装语音环境（含 Python）"
 			else:
 				_install_voice_btn.text = "安装 Edge TTS"
 
 func _on_install_voice() -> void:
 	if _install_active:
+		return
+	if not _is_windows():
+		var command := _install_command_text()
+		DisplayServer.clipboard_set(command)
+		_toast("已复制安装命令，请在终端运行：" + command, 0)
+		_current_zh.text = "请在终端运行：\n" + command
 		return
 	var script := ProjectSettings.globalize_path("res://addons/hover_translator/install_voice.ps1")
 	if not FileAccess.file_exists(script):
@@ -824,7 +899,12 @@ func _toast(message: String, severity: int = 0) -> void:
 	print("[HoverTranslator] " + message)
 
 func _warn_voice() -> void:
-	_toast("Hover Translator：没有可用的英文语音。打开底部“划词翻译”面板，点“安装语音环境”，或安装 Windows 英文语音。", 1)
+	if _is_windows():
+		_toast("Hover Translator：没有可用的英文语音。打开底部“划词翻译”面板，点“安装语音环境”，或安装 Windows 英文语音。", 1)
+	elif OS.get_name() == "macOS":
+		_toast("Hover Translator：没有可用的语音。请检查 系统设置 → 辅助功能 → 朗读内容，或在终端安装 edge-tts。", 1)
+	else:
+		_toast("Hover Translator：没有可用的语音。请安装 speech-dispatcher / espeak-ng，或在终端安装 edge-tts。", 1)
 
 func _update_tooltip_avoidance(mouse_global: Vector2) -> void:
 	if overlay == null or probe == null or base == null or not is_instance_valid(base):

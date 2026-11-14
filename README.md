@@ -4,6 +4,8 @@ Godot 编辑器悬停翻译插件：鼠标划过英文，立即显示中文并�
 
 安装后即可使用。查词、联网翻译、朗读都是自动的，**不需要 AI**。
 
+支持 **Windows / macOS / Linux** 桌面版 Godot 编辑器；Android / iOS / Web 版会在启用时自动拦截并提示，不会加载面板。
+
 ## 安装
 
 把 `addons/hover_translator` 复制到你的 Godot 项目，然后在
@@ -13,15 +15,19 @@ Godot 编辑器悬停翻译插件：鼠标划过英文，立即显示中文并�
 
 鼠标放在要翻译的目标上，翻译器会自动翻译并读出内容，安装完后底部会出现 **划词翻译** 这个选项，点击它可以开启或关闭某一项功能，或者查看一些属性 （嫌弃这个插件读着太吵了的，或者嫌弃这个框框的交互逻辑，讨厌这个框框，都可以在这里更改）(*/ω＼*)
 
-## 语音依赖
+## 语音
 
-默认使用外部 Edge TTS（统一男声 `en-US-GuyNeural`）：
+- **Windows**：默认“先 Windows 系统语音再 Edge”，没装 Python 也能出声。
+- **macOS**：默认使用系统原生 `say`，不需要 Python，也不会生成音频文件。
+- **Linux**：默认使用 `spd-say`（speech-dispatcher）或 `espeak-ng` / `espeak`。
+
+想要 Edge TTS 的音色时再安装（可选）：
 
 ```bash
-python -m pip install edge-tts
+python3 -m pip install --user edge-tts
 ```
 
-第一次遇到新词会生成 MP3，之后使用本地缓存。
+Windows 也可以用面板里的 **安装语音环境** 一键安装 Python + edge-tts。第一次遇到新词会生成 MP3，之后使用本地缓存。
 
 ## 词库维护（可选，不影响使用）
 
@@ -42,8 +48,11 @@ addons/hover_translator/AI_CLASSIFICATION.md
 插件目录里的 `data/` 只是种子；运行时词库在：
 
 ```text
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
+Windows: %USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
+macOS:   ~/Library/Application Support/HoverTranslator/data/
+Linux:   ${XDG_DATA_HOME:-~/.local/share}/HoverTranslator/data/
 ```
+
+审核文件在对应目录的 `review/online_review.json`。
 
 最后如果喜欢的话就点个⭐吧   ❤️❤️❤️

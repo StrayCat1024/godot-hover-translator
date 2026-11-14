@@ -184,13 +184,17 @@ grammar
 真实审核文件：
 
 ```text
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
+Windows: %USERPROFILE%\AppData\LocalLow\HoverTranslator\review\online_review.json
+macOS:   ~/Library/Application Support/HoverTranslator/review/online_review.json
+Linux:   ${XDG_DATA_HOME:-~/.local/share}/HoverTranslator/review/online_review.json
 ```
 
 插件目录里的 `data/` 只是首次启动的种子；真正生效的词库在：
 
 ```text
-%USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
+Windows: %USERPROFILE%\AppData\LocalLow\HoverTranslator\data\
+macOS:   ~/Library/Application Support/HoverTranslator/data/
+Linux:   ${XDG_DATA_HOME:-~/.local/share}/HoverTranslator/data/
 ```
 
 不要改错地方。

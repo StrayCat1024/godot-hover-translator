@@ -1,8 +1,12 @@
 @tool
 extends Node
-## External Edge-TTS voice. It is used when Windows SAPI is unavailable
-## (for example when the editor runs at low integrity). A background Python
-## process generates an MP3 on the first hover; later hovers use the cache.
+## External Edge-TTS voice. It is used when the system voice is unavailable
+## (for example when the editor runs at low integrity), or when the user wants
+## the nicer online voice. A background process generates an MP3 on the first
+## hover; later hovers use the cache.
+##
+## Windows calls `python -m edge_tts`. macOS / Linux prefer the `edge-tts`
+## console script (pip / pipx / Homebrew) and fall back to `python3 -m edge_tts`.
 
 const CACHE_DIR_NAME := "HoverTranslator"
 const CACHE_SUBDIR := "tts_edge"
@@ -16,6 +20,7 @@ var volume_db := -3.0
 
 var python_cmd := "python"
 var python_args: PackedStringArray = []
+var edge_cmd := ""
 var python_found := false
 var available := false
 var checked := false
@@ -43,41 +48,131 @@ var _prepare_busy := false
 
 func _ready() -> void:
 	set_process(true)
-	_cache_dir = OS.get_environment("USERPROFILE").path_join("AppData/LocalLow").path_join(CACHE_DIR_NAME).path_join(CACHE_SUBDIR)
-	DirAccess.make_dir_recursive_absolute(_cache_dir)
+	_ensure_cache()
 	_player = AudioStreamPlayer.new()
 	_player.name = "EdgeVoicePlayer"
 	_player.bus = "Master"
 	add_child(_player)
 
+func _ensure_cache() -> void:
+	if _cache_dir != "":
+		return
+	_cache_dir = _platform_cache_dir()
+	DirAccess.make_dir_recursive_absolute(_cache_dir)
+
+func _platform_cache_dir() -> String:
+	var home := OS.get_environment("HOME")
+	match OS.get_name():
+		"Windows":
+			var profile := OS.get_environment("USERPROFILE")
+			if profile == "":
+				profile = home
+			return profile.path_join("AppData/LocalLow").path_join(CACHE_DIR_NAME).path_join(CACHE_SUBDIR)
+		"macOS":
+			if home != "":
+				return home.path_join("Library/Caches").path_join(CACHE_DIR_NAME).path_join(CACHE_SUBDIR)
+		"Linux":
+			if home != "":
+				var cache_home := OS.get_environment("XDG_CACHE_HOME")
+				if cache_home == "":
+					cache_home = home.path_join(".cache")
+				return cache_home.path_join(CACHE_DIR_NAME).path_join(CACHE_SUBDIR)
+	return OS.get_user_data_dir().path_join(CACHE_SUBDIR)
+
 func detect_available() -> bool:
+	_ensure_cache()
 	checked = true
 	available = false
 	python_found = false
 	probe_error = ""
-	for exe in ["py", "python", "python3"]:
-		var prefix: PackedStringArray = PackedStringArray(["-3"]) if exe == "py" else PackedStringArray()
-		if exe != "py" and not _python_is_real(exe):
-			# Skip the Microsoft Store alias: running it opens the Store.
-			continue
-		if _probe_python(exe, prefix):
-			return true
-	# PATH may be stale right after the one-click installer; look in the
-	# standard per-user / all-user locations too.
-	for exe in _python_locations():
-		if _probe_python(exe, PackedStringArray()):
-			return true
-	if python_found:
-		_last_error = "未安装 edge-tts，请点“安装 Edge TTS”"
+	edge_cmd = ""
+	if OS.get_name() == "Windows":
+		for exe in ["py", "python", "python3"]:
+			var prefix: PackedStringArray = PackedStringArray(["-3"]) if exe == "py" else PackedStringArray()
+			if exe != "py" and not _python_is_real(exe):
+				# Skip the Microsoft Store alias: running it opens the Store.
+				continue
+			if _probe_python(exe, prefix):
+				return true
+		# PATH may be stale right after the one-click installer; look in the
+		# standard per-user / all-user locations too.
+		for exe in _python_locations():
+			if _probe_python(exe, PackedStringArray()):
+				return true
 	else:
-		_last_error = "未检测到 Python，请先安装 Python 或改用 Windows 系统语音"
+		# macOS / Linux: the edge-tts console script is the most reliable
+		# entry point (pip --user, pipx, Homebrew all install it on PATH).
+		if _probe_edge_cli():
+			return true
+		for exe in ["python3", "python"]:
+			if _probe_python(exe, PackedStringArray()):
+				return true
+	if python_found:
+		_last_error = "未安装 edge-tts，请运行 %s" % _install_command()
+	else:
+		_last_error = "未检测到 Python，请先安装 Python 或改用系统语音"
 	return false
 
-func _python_is_real(exe: String) -> bool:
+func _install_command() -> String:
+	if OS.get_name() == "Windows":
+		return "“安装 Edge TTS”"
+	return "python3 -m pip install --user edge-tts"
+
+func _probe_edge_cli() -> bool:
+	var found := ""
 	var out: Array = []
-	OS.execute("where", [exe], out, true)
+	if OS.execute("which", ["edge-tts"], out, true) == 0:
+		var path := String(out[0]).strip_edges() if out.size() > 0 else ""
+		if path != "" and FileAccess.file_exists(path):
+			found = path
+	if found == "":
+		for candidate in _edge_locations():
+			if FileAccess.file_exists(candidate):
+				found = candidate
+				break
+	if found == "":
+		return false
+	edge_cmd = found
+	python_found = true
+	available = true
+	_last_error = ""
+	return true
+
+func _edge_locations() -> Array[String]:
+	var list: Array[String] = []
+	var home := OS.get_environment("HOME")
+	if OS.get_name() == "macOS":
+		list.append("/opt/homebrew/bin/edge-tts")
+		list.append("/usr/local/bin/edge-tts")
+		# `pip install --user` on macOS puts scripts here, not in ~/.local/bin.
+		if home != "":
+			var py_root := home.path_join("Library/Python")
+			if DirAccess.dir_exists_absolute(py_root):
+				for d in DirAccess.get_directories_at(py_root):
+					list.append(py_root.path_join(d).path_join("bin/edge-tts"))
+	else:
+		list.append("/usr/bin/edge-tts")
+		list.append("/usr/local/bin/edge-tts")
+	if home != "":
+		list.append(home.path_join(".local/bin/edge-tts"))
+	return list
+
+func _python_is_real(exe: String) -> bool:
+	var locator := "where" if OS.get_name() == "Windows" else "which"
+	var out: Array = []
+	OS.execute(locator, [exe], out, true)
 	var first := String(out[0]).strip_edges() if out.size() > 0 else ""
-	return first != "" and not first.to_lower().contains("windowsapps")
+	if first == "":
+		return false
+	if OS.get_name() == "Windows":
+		return not first.to_lower().contains("windowsapps")
+	# macOS ships /usr/bin/python3 as a stub that prompts for Xcode Command
+	# Line Tools. Do not trigger that dialog while just probing the voice.
+	if first == "/usr/bin/python3":
+		var probe: Array = []
+		if OS.execute("/usr/bin/xcode-select", ["-p"], probe, true) != 0:
+			return false
+	return true
 
 func _probe_python(exe: String, prefix: PackedStringArray) -> bool:
 	var out: Array = []
@@ -152,8 +247,8 @@ func status_text() -> String:
 		return "在线语音：已关闭"
 	if checked and not available:
 		if python_found:
-			return "在线语音：未安装 edge-tts（点“安装 Edge TTS”）"
-		return "在线语音：未检测到 Python（点“下载 Python”）"
+			return "在线语音：未安装 edge-tts（%s）" % _install_command()
+		return "在线语音：未检测到 Python（%s）" % _install_command()
 	if _busy:
 		return "在线语音：正在生成（%s）…" % voice_name
 	if _last_error != "":
@@ -181,8 +276,8 @@ func has_cache(text: String) -> bool:
 	return _mem.has(key) or FileAccess.file_exists(_path_for(key))
 
 func prepare(text: String) -> void:
-	# Hybrid mode: generate and cache an Edge clip silently while Windows SAPI
-	# is speaking. The clip is used the next time the same word is hovered.
+	# Hybrid mode: generate and cache an Edge clip silently while the system
+	# voice is speaking. The clip is used the next time the same word is hovered.
 	if not enabled:
 		return
 	if checked and not available:
@@ -249,12 +344,18 @@ func _start(text: String, seq: int) -> bool:
 		_busy = false
 		available = false
 		checked = true
-		_finish_failure("找不到 Python / edge-tts，请先安装 edge-tts")
+		_finish_failure("找不到 edge-tts，请先运行 %s" % _install_command())
 		return false
 	_busy = true
 	return true
 
 func _spawn(text: String, path: String) -> int:
+	if edge_cmd != "":
+		return OS.create_process(edge_cmd, PackedStringArray([
+			"--voice", voice_name,
+			"--text", text,
+			"--write-media", path,
+		]))
 	var args := python_args.duplicate()
 	args.append_array(PackedStringArray([
 		"-m", "edge_tts",
@@ -284,7 +385,7 @@ func _finish_process() -> void:
 			_play(stream)
 	else:
 		_last_error = "语音生成失败（edge-tts 未返回有效 MP3）"
-		# Let the next hover fall back to Windows SAPI instead of retrying a
+		# Let the next hover fall back to the system voice instead of retrying a
 		# backend that is evidently not working.
 		available = false
 		checked = true
@@ -331,4 +432,5 @@ func _key(text: String) -> String:
 	return (voice_name + "|" + text).sha256_text()
 
 func _path_for(key: String) -> String:
+	_ensure_cache()
 	return _cache_dir.path_join(key + ".mp3")
