@@ -108,15 +108,15 @@ func detect_available() -> bool:
 			if _probe_python(exe, PackedStringArray()):
 				return true
 	if python_found:
-		_last_error = "未安装 edge-tts，请运行 %s" % _install_command()
+		_last_error = "未安装 edge-tts，请" + _install_hint()
 	else:
 		_last_error = "未检测到 Python，请先安装 Python 或改用系统语音"
 	return false
 
-func _install_command() -> String:
+func _install_hint() -> String:
 	if OS.get_name() == "Windows":
-		return "“安装 Edge TTS”"
-	return "python3 -m pip install --user edge-tts"
+		return "点“安装 Edge TTS”"
+	return "运行 python3 -m pip install --user edge-tts"
 
 func _probe_edge_cli() -> bool:
 	var found := ""
@@ -247,8 +247,8 @@ func status_text() -> String:
 		return "在线语音：已关闭"
 	if checked and not available:
 		if python_found:
-			return "在线语音：未安装 edge-tts（%s）" % _install_command()
-		return "在线语音：未检测到 Python（%s）" % _install_command()
+			return "在线语音：未安装 edge-tts（%s）" % _install_hint()
+		return "在线语音：未检测到 Python（%s）" % _install_hint()
 	if _busy:
 		return "在线语音：正在生成（%s）…" % voice_name
 	if _last_error != "":
@@ -344,7 +344,7 @@ func _start(text: String, seq: int) -> bool:
 		_busy = false
 		available = false
 		checked = true
-		_finish_failure("找不到 edge-tts，请先运行 %s" % _install_command())
+		_finish_failure("找不到 edge-tts，请先" + _install_hint())
 		return false
 	_busy = true
 	return true
