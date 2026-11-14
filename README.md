@@ -56,7 +56,7 @@ Linux:   ${XDG_DATA_HOME:-~/.local/share}/HoverTranslator/data/
 审核文件在对应目录的 `review/online_review.json`。
 
 ## 支持
-mac os 🍎/ linux 🐧 / windows 💻
+mac os 🍎/ linux 🐧 / windows 💻 支持 😺
 安卓/ios 不支持 ✖️
 
 最后如果喜欢的话就点个⭐吧🐱   ❤️❤️❤️
