@@ -103,12 +103,13 @@ func _start_unix() -> void:
 
 func _start_macos() -> void:
 	var out: Array = []
-	if OS.execute("say", ["-v", "?"], out, true) != 0:
+	var code := OS.execute("say", ["-v", "?"], out, true)
+	var voices := String(out[0]) if out.size() > 0 else ""
+	if code != 0 and voices.strip_edges() == "":
 		last_error = "找不到 macOS 的 say 命令"
 		_permanent = true
 		return
 	_backend = "say"
-	var voices := String(out[0]) if out.size() > 0 else ""
 	var chosen := _pick_macos_voice(voices)
 	_system_voice = chosen
 	_voice = chosen if chosen != "" else "系统默认"
