@@ -2,14 +2,56 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Godot Hover Translator - 编辑器悬停翻译插件</title>
-    <meta name="description" content="Godot 编辑器悬停翻译插件：鼠标划过英文 UI、检查器属性、场景树、脚本代码时，立即显示中文翻译并自动朗读。">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- SEO 核心：标题里尽量包含别人可能搜的词 -->
+    <title>Godot Hover Translator - Godot 编辑器悬停翻译插件 | 鼠标悬停即显中文</title>
+    
+    <!-- SEO 核心：这段描述会直接显示在搜索结果标题下方，引导别人点击 -->
+    <meta name="description" content="Godot Hover Translator 是一个专为 Godot 引擎开发的编辑器悬停翻译插件。鼠标划过英文 UI、检查器属性、场景树、脚本代码时，立即显示中文翻译并自动朗读。无需 AI，开箱即用，支持 Windows / macOS / Linux。">
+    <meta name="keywords" content="Godot, 翻译插件, 悬停翻译, 划词翻译, Godot汉化, Godot中文, 游戏引擎, 编辑器插件">
+    
+    <style>
+        /* 极简黑白灰，拒绝花里胡哨 */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
+        h1 { font-size: 2.2em; border-bottom: 1px solid #eaecef; padding-bottom: 10px; }
+        h2 { font-size: 1.5em; margin-top: 30px; }
+        p, li { font-size: 1.1em; color: #24292e; }
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .btn { display: inline-block; background-color: #2ea44f; color: white; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 1.2em; margin: 20px 0; }
+        .btn:hover { background-color: #2c974b; text-decoration: none; }
+        .code { background-color: #f6f8fa; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+    </style>
 </head>
-<body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; line-height: 1.6;">
+<body>
+
     <h1>Godot Hover Translator</h1>
-    <p>Godot 编辑器悬停翻译插件：鼠标划过英文 UI、检查器属性、场景树、脚本代码时，立即显示中文翻译并自动朗读。</p>
-    <p>支持 Windows、macOS、Linux。无需 AI，开箱即用。</p>
-    <hr>
-    <h3><a href="https://github.com/StrayCat1024/godot-hover-translator">👉 点击这里前往 GitHub 仓库查看源码和下载</a></h3>
+    <p><strong>Godot 编辑器悬停翻译插件：鼠标划过英文，立即显示中文并朗读。</strong></p>
+    <p>安装后即可使用。查词、联网翻译、朗读都是自动的，不需要 AI 大模型。</p>
+
+    <a href="https://github.com/StrayCat1024/godot-hover-translator" class="btn">前往 GitHub 仓库查看源码和下载</a>
+
+    <h2>核心功能与覆盖范围</h2>
+    <ul>
+        <li><strong>检查器 (Inspector)：</strong> 鼠标悬停在属性、节点名称上即时翻译。</li>
+        <li><strong>场景树 & 文件系统：</strong> 自动翻译节点名、类名、文件名。</li>
+        <li><strong>代码编辑器：</strong> 鼠标划过 <span class="code">add_child</span>、<span class="code">queue_free</span> 等代码立即显示中文释义。</li>
+        <li><strong>界面元素：</strong> 菜单、按钮、Tab 等原生 UI 的英文全量支持。</li>
+    </ul>
+
+    <h2>支持的操作系统</h2>
+    <ul>
+        <li><strong>Windows：</strong> 完整支持，默认使用系统语音 (SAPI) 朗读。</li>
+        <li><strong>macOS：</strong> 完整支持，默认使用原生 say 语音朗读。</li>
+        <li><strong>Linux：</strong> 完整支持，默认使用 speech-dispatcher 或 espeak。</li>
+        <li><em>注：Android / iOS / Web 版编辑器暂不支持，启用时会自动拦截提示。</em></li>
+    </ul>
+
+    <h2>安装方法</h2>
+    <p>把 <span class="code">addons/hover_translator</span> 文件夹复制到你的 Godot 项目，然后在 <strong>项目 → 项目设置 → 插件</strong> 中启用 Hover Translator 即可。</p>
+
+    <hr style="margin: 40px 0; border: 0; border-top: 1px solid #eaecef;">
+    <p style="text-align: center; color: #6a737d;">如果这个插件对你有帮助，欢迎在 GitHub 点个 ⭐ 支持一下！</p>
+
 </body>
 </html>
